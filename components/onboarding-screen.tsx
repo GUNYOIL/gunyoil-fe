@@ -11,9 +11,15 @@ import {
   calculateProteinTarget,
   createEmptyRoutineMap,
   createExerciseId,
+  formatBodyParts,
   getDayMeta,
   getGoalOption,
+  getPreferredMachineCategories,
+  hasWorkoutBodyParts,
+  isRestDay,
+  toggleBodyPartSelection,
   type DayKey,
+  type BodyPart,
   type ExerciseDraft,
   type Gender,
   type GoalKey,
@@ -55,12 +61,12 @@ export default function OnboardingScreen({
   const goalOption = getGoalOption(goal)
   const selectedDayRoutine = routines[selectedDay]
   const selectedDayMeta = getDayMeta(selectedDay)
-  const selectedDayNeedsExercise =
-    Boolean(selectedDayRoutine.bodyPart) && selectedDayRoutine.bodyPart !== "휴식"
+  const selectedDayBodyPartLabel = formatBodyParts(selectedDayRoutine.bodyParts)
+  const selectedDayNeedsExercise = hasWorkoutBodyParts(selectedDayRoutine.bodyParts)
 
   const workingDays = DAY_META.filter((day) => {
     const routine = routines[day.key]
-    return routine.bodyPart && routine.bodyPart !== "휴식"
+    return hasWorkoutBodyParts(routine.bodyParts)
   })
   const completedRoutineDays = workingDays.filter((day) => {
     const routine = routines[day.key]
@@ -71,37 +77,29 @@ export default function OnboardingScreen({
     return routine.exercises.length === 0 || routine.exercises.some((exercise) => !isExerciseConfigured(exercise))
   })
   const prioritizedMachines = useMemo(() => {
-    const bodyPartToCategory: Record<string, MachineCategoryKey> = {
-      "가슴": "chest",
-      "등": "back",
-      "하체": "legs",
-      "어깨": "shoulder",
-      "팔": "arms",
-      "유산소": "cardio",
-    }
-
     return MACHINES.filter((machine) => {
       const matchesSearch = machine.name.toLowerCase().includes(machineSearch.toLowerCase())
       const matchesCategory = machineCategory === "all" || machine.category === machineCategory
       return matchesSearch && matchesCategory
     }).sort((left, right) => {
-      const preferredCategory = selectedDayRoutine.bodyPart
-        ? bodyPartToCategory[selectedDayRoutine.bodyPart] ?? "all"
-        : "all"
-
-      const leftRank = preferredCategory !== "all" && left.category === preferredCategory ? 0 : 1
-      const rightRank = preferredCategory !== "all" && right.category === preferredCategory ? 0 : 1
+      const preferredCategories = getPreferredMachineCategories(selectedDayRoutine.bodyParts)
+      const leftRank = preferredCategories.includes(left.category) ? 0 : 1
+      const rightRank = preferredCategories.includes(right.category) ? 0 : 1
       return leftRank - rightRank
     })
-  }, [machineCategory, machineSearch, selectedDayRoutine.bodyPart])
+  }, [machineCategory, machineSearch, selectedDayRoutine.bodyParts])
 
-  const setBodyPart = (dayKey: DayKey, nextBodyPart: (typeof BODY_PARTS)[number]) => {
+  const toggleBodyPart = (dayKey: DayKey, nextBodyPart: BodyPart) => {
     setRoutines((previous) => ({
       ...previous,
-      [dayKey]:
-        nextBodyPart === "휴식"
-          ? { bodyPart: nextBodyPart, exercises: [] }
-          : { ...previous[dayKey], bodyPart: nextBodyPart },
+      [dayKey]: (() => {
+        const nextBodyParts = toggleBodyPartSelection(previous[dayKey].bodyParts, nextBodyPart)
+        if (isRestDay(nextBodyParts)) {
+          return { bodyParts: nextBodyParts, exercises: [] }
+        }
+
+        return { ...previous[dayKey], bodyParts: nextBodyParts }
+      })(),
     }))
   }
 
@@ -117,7 +115,7 @@ export default function OnboardingScreen({
     setRoutines((previous) => ({
       ...previous,
       [dayKey]: {
-        bodyPart: previousRoutine.bodyPart,
+        bodyParts: [...previousRoutine.bodyParts],
         exercises: previousRoutine.exercises.map((exercise) => ({
           ...exercise,
           id: createExerciseId(dayKey, exercise.machineId),
@@ -183,10 +181,9 @@ export default function OnboardingScreen({
 
   const canProceedProfile =
     Number(height) > 0 && Number(weight) > 0 && (gender === "male" || gender === "female")
-  const canGoExerciseStage = Boolean(selectedDayRoutine.bodyPart)
+  const canGoExerciseStage = selectedDayRoutine.bodyParts.length > 0
   const canGoDetailStage =
-    selectedDayRoutine.bodyPart === "휴식" ||
-    (selectedDayRoutine.bodyPart !== "" && selectedDayRoutine.exercises.length > 0)
+    isRestDay(selectedDayRoutine.bodyParts) || (selectedDayRoutine.bodyParts.length > 0 && selectedDayRoutine.exercises.length > 0)
   const canCompleteRoutine = workingDays.length > 0 && incompleteDays.length === 0
 
   const profileSummary =
@@ -197,10 +194,10 @@ export default function OnboardingScreen({
   const routineSummary =
     routineStage === "focus"
       ? canGoExerciseStage
-        ? `${selectedDayMeta.full} · ${selectedDayRoutine.bodyPart}`
+        ? `${selectedDayMeta.full} · ${selectedDayBodyPartLabel}`
         : "선택한 요일의 운동 부위를 먼저 정해 주세요"
       : routineStage === "exercise"
-        ? selectedDayRoutine.bodyPart === "휴식"
+        ? isRestDay(selectedDayRoutine.bodyParts)
           ? `${selectedDayMeta.full}은 휴식일입니다`
           : `${selectedDayRoutine.exercises.length}개 운동 선택됨`
         : canCompleteRoutine
@@ -397,7 +394,7 @@ export default function OnboardingScreen({
                   <p className="mt-1 text-[13px] text-[#4E5968]">{selectedDayMeta.full}</p>
                 </div>
                 <span className="rounded-full bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-semibold text-[#6B7684]">
-                  {selectedDayRoutine.bodyPart || "미설정"}
+                  {selectedDayBodyPartLabel}
                 </span>
               </div>
               <div className="mt-3 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
@@ -405,8 +402,8 @@ export default function OnboardingScreen({
                   const routine = routines[day.key]
                   const isSelected = selectedDay === day.key
                   const isDone =
-                    Boolean(routine.bodyPart) &&
-                    (routine.bodyPart === "휴식" ||
+                    routine.bodyParts.length > 0 &&
+                    (isRestDay(routine.bodyParts) ||
                       (routine.exercises.length > 0 && routine.exercises.every(isExerciseConfigured)))
 
                   return (
@@ -421,11 +418,11 @@ export default function OnboardingScreen({
                       type="button"
                     >
                       <span className={`text-[13px] font-semibold ${isSelected ? "text-[#3182F6]" : "text-[#191F28]"}`}>
-                        {day.label}
-                      </span>
-                      <span className={`text-[11px] ${isSelected ? "text-[#3182F6]" : "text-[#8B95A1]"}`}>
-                        {routine.bodyPart || "미설정"}
-                      </span>
+                      {day.label}
+                    </span>
+                    <span className={`text-[11px] ${isSelected ? "text-[#3182F6]" : "text-[#8B95A1]"}`}>
+                      {formatBodyParts(routine.bodyParts)}
+                    </span>
                       {isDone ? (
                         <span className="rounded-full bg-[#3182F6] px-1.5 py-0.5 text-[9px] font-semibold text-white">
                           완료
@@ -441,25 +438,25 @@ export default function OnboardingScreen({
               <>
                 <div className="rounded-[24px] border border-[#E5E8EB] bg-[#FFFFFF] p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[12px] font-semibold text-[#8B95A1]">운동 부위</p>
-                      <p className="mt-1 text-[13px] text-[#4E5968]">먼저 해당 요일의 부위를 정합니다</p>
-                    </div>
-                    <span className="rounded-full bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-semibold text-[#6B7684]">
-                      {selectedDayRoutine.bodyPart || "미설정"}
-                    </span>
+                  <div>
+                    <p className="text-[12px] font-semibold text-[#8B95A1]">운동 부위</p>
+                    <p className="mt-1 text-[13px] text-[#4E5968]">복수 선택 가능, 휴식은 단독 선택됩니다</p>
                   </div>
+                  <span className="rounded-full bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-semibold text-[#6B7684]">
+                    {selectedDayBodyPartLabel}
+                  </span>
+                </div>
 
-                  <div className="mt-4 grid grid-cols-3 gap-2">
-                    {BODY_PARTS.map((part) => (
-                      <button
-                        key={part}
-                        className={`rounded-2xl border py-3 text-[13px] font-medium transition-colors ${
-                          selectedDayRoutine.bodyPart === part
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  {BODY_PARTS.map((part) => (
+                    <button
+                      key={part}
+                      className={`rounded-2xl border py-3 text-[13px] font-medium transition-colors ${
+                          selectedDayRoutine.bodyParts.includes(part)
                             ? "border-[#3182F6] bg-[#EBF3FE] text-[#3182F6]"
                             : "border-[#E5E8EB] bg-[#FFFFFF] text-[#191F28]"
                         }`}
-                        onClick={() => setBodyPart(selectedDay, part)}
+                        onClick={() => toggleBodyPart(selectedDay, part)}
                         type="button"
                       >
                         {part}
@@ -503,7 +500,7 @@ export default function OnboardingScreen({
                           >
                             <div>
                               <p className="font-semibold text-[#191F28]">{day.full}</p>
-                              <p className="mt-1 text-[11px] text-[#8B95A1]">{routine.bodyPart}</p>
+                              <p className="mt-1 text-[11px] text-[#8B95A1]">{formatBodyParts(routine.bodyParts)}</p>
                             </div>
                             <span className="rounded-full bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-semibold text-[#8B95A1]">
                               {routine.exercises.length}개
@@ -588,7 +585,7 @@ export default function OnboardingScreen({
                       })}
                     </div>
                   </div>
-                ) : selectedDayRoutine.bodyPart === "휴식" ? (
+                ) : isRestDay(selectedDayRoutine.bodyParts) ? (
                   <div className="rounded-[24px] border border-[#E5E8EB] bg-[#FFFFFF] px-4 py-6 text-center">
                     <p className="text-[14px] font-semibold text-[#191F28]">{selectedDayMeta.full}은 휴식일입니다</p>
                     <p className="mt-2 text-[12px] text-[#8B95A1]">휴식일은 운동 선택 없이 넘어갈 수 있습니다</p>
@@ -643,7 +640,7 @@ export default function OnboardingScreen({
                       <div>
                         <p className="text-[12px] font-semibold text-[#8B95A1]">세트 입력</p>
                         <p className="mt-1 text-[13px] text-[#4E5968]">
-                          {selectedDayMeta.full} · {selectedDayRoutine.bodyPart}
+                          {selectedDayMeta.full} · {selectedDayBodyPartLabel}
                         </p>
                       </div>
                       <span className="rounded-full bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-semibold text-[#6B7684]">
@@ -712,7 +709,7 @@ export default function OnboardingScreen({
                       ))}
                     </div>
                   </div>
-                ) : selectedDayRoutine.bodyPart === "휴식" ? (
+                ) : isRestDay(selectedDayRoutine.bodyParts) ? (
                   <div className="rounded-[24px] border border-[#E5E8EB] bg-[#FFFFFF] px-4 py-6 text-center">
                     <p className="text-[14px] font-semibold text-[#191F28]">{selectedDayMeta.full}은 휴식일입니다</p>
                     <p className="mt-2 text-[12px] text-[#8B95A1]">휴식일은 세트 입력 없이 완료됩니다</p>
@@ -745,7 +742,7 @@ export default function OnboardingScreen({
                             <div>
                               <p className="font-semibold text-[#191F28]">{day.full}</p>
                               <p className="mt-1 text-[11px] text-[#8B95A1]">
-                                {routine.bodyPart} · 운동 {routine.exercises.length}개
+                                {formatBodyParts(routine.bodyParts)} · 운동 {routine.exercises.length}개
                               </p>
                             </div>
                             <span

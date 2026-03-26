@@ -3,8 +3,10 @@
 import { useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react"
 import {
   DAY_META,
+  formatBodyParts,
   getGoalOption,
   getTodayDayKey,
+  hasWorkoutBodyParts,
   type ProteinState,
   type OnboardingData,
 } from "@/lib/app-config"
@@ -93,7 +95,7 @@ export default function AppShell({
   const goalOption = getGoalOption(profile.goal)
   const workingDays = DAY_META.filter((day) => {
     const routine = routines[day.key]
-    return routine.bodyPart && routine.bodyPart !== "휴식"
+    return hasWorkoutBodyParts(routine.bodyParts)
   })
   const totalExercises = Object.values(routines).reduce((sum, routine) => sum + routine.exercises.length, 0)
   const currentDate = new Intl.DateTimeFormat("ko-KR", {
@@ -105,12 +107,12 @@ export default function AppShell({
   const tabMeta = useMemo(
     () => ({
       "오늘": {
-        helper: todayRoutine.bodyPart
-          ? `${todayRoutine.bodyPart} 루틴 ${todayRoutine.exercises.length}개`
+        helper: hasWorkoutBodyParts(todayRoutine.bodyParts)
+          ? `${formatBodyParts(todayRoutine.bodyParts)} 루틴 ${todayRoutine.exercises.length}개`
           : "오늘 설정된 루틴이 없습니다",
         chips: [
           DAY_META.find((day) => day.key === todayKey)?.full ?? "오늘",
-          todayRoutine.bodyPart || "미설정",
+          formatBodyParts(todayRoutine.bodyParts),
           `${profile.proteinTarget}g 목표`,
         ],
       },
@@ -127,7 +129,7 @@ export default function AppShell({
         chips: [`${profile.weight}kg`, `${profile.proteinTarget}g`, `${goalOption.proteinMultiplier}g/kg`],
       },
     }),
-    [goalOption, profile.proteinTarget, profile.weight, todayKey, todayRoutine.bodyPart, todayRoutine.exercises.length, totalExercises, workingDays.length],
+    [goalOption, profile.proteinTarget, profile.weight, todayKey, todayRoutine.bodyParts, todayRoutine.exercises.length, totalExercises, workingDays.length],
   )
 
   const activeMeta = tabMeta[activeTab]

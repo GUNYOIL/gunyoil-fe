@@ -9,6 +9,7 @@ export const DAY_META = [
 ] as const
 
 export const BODY_PARTS = ["가슴", "등", "하체", "어깨", "팔", "유산소", "전신", "휴식"] as const
+export const REST_DAY_BODY_PART = "휴식" as const
 
 export const GOAL_OPTIONS = [
   {
@@ -28,6 +29,12 @@ export const GOAL_OPTIONS = [
     label: "다이어트",
     helper: "감량 중 근손실 방지를 위해 단백질 비중을 유지합니다",
     proteinMultiplier: 2.0,
+  },
+  {
+    key: "performance",
+    label: "퍼포먼스 증가",
+    helper: "중량과 수행 능력 향상에 맞춰 회복 중심으로 단백질을 잡습니다",
+    proteinMultiplier: 1.8,
   },
   {
     key: "maintenance",
@@ -96,7 +103,7 @@ export type ExerciseDraft = {
 }
 
 export type DayRoutineDraft = {
-  bodyPart: BodyPart | ""
+  bodyParts: BodyPart[]
   exercises: ExerciseDraft[]
 }
 
@@ -159,14 +166,143 @@ export const QUICK_PROTEIN_ITEMS = [
 
 export function createEmptyRoutineMap(): RoutineMap {
   return {
-    mon: { bodyPart: "", exercises: [] },
-    tue: { bodyPart: "", exercises: [] },
-    wed: { bodyPart: "", exercises: [] },
-    thu: { bodyPart: "", exercises: [] },
-    fri: { bodyPart: "", exercises: [] },
-    sat: { bodyPart: "", exercises: [] },
-    sun: { bodyPart: "", exercises: [] },
+    mon: { bodyParts: [], exercises: [] },
+    tue: { bodyParts: [], exercises: [] },
+    wed: { bodyParts: [], exercises: [] },
+    thu: { bodyParts: [], exercises: [] },
+    fri: { bodyParts: [], exercises: [] },
+    sat: { bodyParts: [], exercises: [] },
+    sun: { bodyParts: [], exercises: [] },
   }
+}
+
+export function isRestDay(bodyParts: BodyPart[]) {
+  return bodyParts.includes(REST_DAY_BODY_PART)
+}
+
+export function hasWorkoutBodyParts(bodyParts: BodyPart[]) {
+  return bodyParts.length > 0 && !isRestDay(bodyParts)
+}
+
+export function formatBodyParts(bodyParts: BodyPart[], emptyLabel = "미설정") {
+  if (bodyParts.length === 0) {
+    return emptyLabel
+  }
+
+  if (isRestDay(bodyParts)) {
+    return REST_DAY_BODY_PART
+  }
+
+  return bodyParts.join(" · ")
+}
+
+export function toggleBodyPartSelection(currentBodyParts: BodyPart[], nextBodyPart: BodyPart): BodyPart[] {
+  if (nextBodyPart === REST_DAY_BODY_PART) {
+    return isRestDay(currentBodyParts) ? [] : [REST_DAY_BODY_PART]
+  }
+
+  const nextSet = new Set(currentBodyParts.filter((bodyPart) => bodyPart !== REST_DAY_BODY_PART))
+  if (nextSet.has(nextBodyPart)) {
+    nextSet.delete(nextBodyPart)
+  } else {
+    nextSet.add(nextBodyPart)
+  }
+
+  return BODY_PARTS.filter(
+    (bodyPart): bodyPart is Exclude<BodyPart, typeof REST_DAY_BODY_PART> =>
+      bodyPart !== REST_DAY_BODY_PART && nextSet.has(bodyPart),
+  )
+}
+
+export function getPreferredMachineCategories(bodyParts: BodyPart[]): MachineCategoryKey[] {
+  const bodyPartToCategory: Partial<Record<BodyPart, MachineCategoryKey>> = {
+    "가슴": "chest",
+    "등": "back",
+    "하체": "legs",
+    "어깨": "shoulder",
+    "팔": "arms",
+    "유산소": "cardio",
+  }
+
+  return bodyParts.reduce<MachineCategoryKey[]>((accumulator, bodyPart) => {
+    const category = bodyPartToCategory[bodyPart]
+    if (category && !accumulator.includes(category)) {
+      accumulator.push(category)
+    }
+    return accumulator
+  }, [])
+}
+
+function normalizeBodyParts(value: unknown): BodyPart[] {
+  if (typeof value === "string") {
+    return BODY_PARTS.includes(value as BodyPart) ? toggleBodyPartSelection([], value as BodyPart) : []
+  }
+
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const filtered = value.filter((item): item is BodyPart => typeof item === "string" && BODY_PARTS.includes(item as BodyPart))
+  if (filtered.includes(REST_DAY_BODY_PART)) {
+    return [REST_DAY_BODY_PART]
+  }
+
+  return BODY_PARTS.filter(
+    (bodyPart): bodyPart is Exclude<BodyPart, typeof REST_DAY_BODY_PART> =>
+      bodyPart !== REST_DAY_BODY_PART && filtered.includes(bodyPart),
+  )
+}
+
+export function normalizeRoutineMap(value: unknown): RoutineMap {
+  const initial = createEmptyRoutineMap()
+
+  if (!value || typeof value !== "object") {
+    return initial
+  }
+
+  const candidate = value as Record<string, unknown>
+
+  DAY_META.forEach((day) => {
+    const rawRoutine = candidate[day.key]
+    if (!rawRoutine || typeof rawRoutine !== "object") {
+      return
+    }
+
+    const parsedRoutine = rawRoutine as {
+      bodyParts?: unknown
+      bodyPart?: unknown
+      exercises?: unknown
+    }
+
+    initial[day.key] = {
+      bodyParts: normalizeBodyParts(parsedRoutine.bodyParts ?? parsedRoutine.bodyPart),
+      exercises: Array.isArray(parsedRoutine.exercises)
+        ? parsedRoutine.exercises.flatMap((exercise) => {
+            if (!exercise || typeof exercise !== "object") {
+              return []
+            }
+
+            const candidateExercise = exercise as Partial<ExerciseDraft>
+            if (typeof candidateExercise.id !== "string") {
+              return []
+            }
+
+            return [
+              {
+                id: candidateExercise.id,
+                machineId: typeof candidateExercise.machineId === "string" ? candidateExercise.machineId : "",
+                machineName: typeof candidateExercise.machineName === "string" ? candidateExercise.machineName : "",
+                weight: typeof candidateExercise.weight === "string" ? candidateExercise.weight : "",
+                reps: typeof candidateExercise.reps === "string" ? candidateExercise.reps : "",
+                sets: typeof candidateExercise.sets === "string" ? candidateExercise.sets : "",
+              },
+            ]
+          })
+        : [],
+    }
+  })
+
+  return initial
 }
 
 export function createInitialProteinState(): ProteinState {

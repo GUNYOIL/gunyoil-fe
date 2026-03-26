@@ -1,6 +1,6 @@
 "use client"
 
-import { DAY_META, getTodayDayKey, type RoutineMap } from "@/lib/app-config"
+import { DAY_META, formatBodyParts, getTodayDayKey, hasWorkoutBodyParts, isRestDay, type RoutineMap } from "@/lib/app-config"
 
 export default function RoutineScreen({
   onEdit,
@@ -12,7 +12,7 @@ export default function RoutineScreen({
   const todayKey = getTodayDayKey()
   const configuredDays = DAY_META.filter((day) => {
     const routine = routines[day.key]
-    return routine.bodyPart && routine.bodyPart !== "휴식"
+    return hasWorkoutBodyParts(routine.bodyParts)
   })
   const totalSets = configuredDays.reduce((sum, day) => {
     return sum + routines[day.key].exercises.reduce((exerciseSum, exercise) => exerciseSum + (Number(exercise.sets) || 0), 0)
@@ -52,7 +52,7 @@ export default function RoutineScreen({
           {DAY_META.map((day) => {
             const routine = routines[day.key]
             const isToday = day.key === todayKey
-            const hasRoutine = Boolean(routine.bodyPart) && routine.bodyPart !== "휴식"
+            const hasRoutine = hasWorkoutBodyParts(routine.bodyParts)
 
             return (
               <div
@@ -65,7 +65,7 @@ export default function RoutineScreen({
                   {day.label}
                 </span>
                 <span className={`text-[11px] ${isToday ? "text-[#3182F6]" : "text-[#8B95A1]"}`}>
-                  {routine.bodyPart || "미설정"}
+                  {formatBodyParts(routine.bodyParts)}
                 </span>
                 <span className={`h-1.5 w-1.5 rounded-full ${hasRoutine ? "bg-[#2CB52C]" : "bg-[#E5E8EB]"}`} />
               </div>
@@ -78,8 +78,8 @@ export default function RoutineScreen({
         {DAY_META.map((day) => {
           const routine = routines[day.key]
           const isToday = day.key === todayKey
-          const isRest = routine.bodyPart === "휴식"
-          const isEmpty = !routine.bodyPart
+          const isRest = isRestDay(routine.bodyParts)
+          const isEmpty = routine.bodyParts.length === 0
 
           return (
             <div
@@ -98,7 +98,9 @@ export default function RoutineScreen({
                       오늘
                     </span>
                   ) : null}
-                  {routine.bodyPart ? <span className="text-[12px] text-[#4E5968]">{routine.bodyPart}</span> : null}
+                  {routine.bodyParts.length > 0 ? (
+                    <span className="text-[12px] text-[#4E5968]">{formatBodyParts(routine.bodyParts)}</span>
+                  ) : null}
                 </div>
                 {isEmpty || isRest ? (
                   <span className="rounded-full border border-[#E5E8EB] bg-[#FFFFFF] px-2.5 py-1 text-[12px] text-[#8B95A1]">

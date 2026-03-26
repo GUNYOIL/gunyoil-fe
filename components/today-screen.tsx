@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { DAY_META, getTodayDayKey, type RoutineMap } from "@/lib/app-config"
+import { DAY_META, formatBodyParts, getTodayDayKey, hasWorkoutBodyParts, isRestDay, type RoutineMap } from "@/lib/app-config"
 import { CheckCircle2Icon, CircleIcon } from "./icons"
 
 type SetState = "idle" | "done"
@@ -20,7 +20,7 @@ function createExerciseRecords(routines: RoutineMap) {
   const todayKey = getTodayDayKey()
   const routine = routines[todayKey]
 
-  if (!routine || routine.bodyPart === "휴식" || routine.exercises.length === 0) {
+  if (!routine || isRestDay(routine.bodyParts) || routine.exercises.length === 0) {
     return []
   }
 
@@ -71,7 +71,7 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
     setExpandedId(null)
   }, [routines])
 
-  const hasRoutine = Boolean(todayRoutine?.bodyPart) && todayRoutine.bodyPart !== "휴식" && exercises.length > 0
+  const hasRoutine = hasWorkoutBodyParts(todayRoutine?.bodyParts ?? []) && exercises.length > 0
 
   const toggleSet = (exerciseId: string, setIndex: number) => {
     setExercises((previous) =>
@@ -120,7 +120,7 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
         <div className="px-4 pb-6">
           <div className="rounded-[24px] border border-[#E5E8EB] bg-[#FFFFFF] px-4 py-8 text-center">
             <p className="text-[18px] font-bold text-[#191F28]">
-              {todayRoutine?.bodyPart === "휴식" ? "오늘은 휴식일입니다" : "오늘 루틴이 비어 있습니다"}
+              {isRestDay(todayRoutine?.bodyParts ?? []) ? "오늘은 휴식일입니다" : "오늘 루틴이 비어 있습니다"}
             </p>
             <p className="mt-2 text-[13px] leading-6 text-[#8B95A1]">
               루틴 탭에서 오늘 운동을 추가하면 이 화면에서 바로 기록할 수 있습니다
@@ -140,7 +140,7 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
             <span className="text-[15px] text-[#8B95A1]">{dayStr}</span>
           </div>
           <p className="mt-0.5 text-[13px] text-[#8B95A1]">
-            {todayLabel} · {todayRoutine.bodyPart}
+            {todayLabel} · {formatBodyParts(todayRoutine.bodyParts)}
           </p>
         </div>
 
