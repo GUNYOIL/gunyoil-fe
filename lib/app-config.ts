@@ -110,7 +110,10 @@ export const MACHINES = [
   { id: "barbell-back-squat", name: "바벨 백 스쿼트", category: "legs", muscle: "대퇴사두/둔근" },
   { id: "front-squat", name: "프론트 스쿼트", category: "legs", muscle: "대퇴사두/코어" },
   { id: "goblet-squat", name: "고블릿 스쿼트", category: "legs", muscle: "하체/코어" },
+  { id: "box-squat", name: "박스 스쿼트", category: "legs", muscle: "대퇴사두/둔근" },
   { id: "romanian-deadlift", name: "루마니안 데드리프트", category: "legs", muscle: "햄스트링/둔근" },
+  { id: "conventional-deadlift", name: "컨벤셔널 데드리프트", category: "legs", muscle: "후면사슬/척추기립근" },
+  { id: "clean-deadlift", name: "클린 데드리프트", category: "legs", muscle: "하체/후면사슬" },
   { id: "dumbbell-lunge", name: "덤벨 런지", category: "legs", muscle: "대퇴사두/둔근" },
   { id: "bulgarian-split-squat", name: "불가리안 스플릿 스쿼트", category: "legs", muscle: "대퇴사두/둔근" },
   { id: "barbell-hip-thrust", name: "바벨 힙 쓰러스트", category: "legs", muscle: "둔근" },
@@ -120,6 +123,7 @@ export const MACHINES = [
   { id: "rear-delt", name: "리어 델트 머신", category: "shoulder", muscle: "후면 삼각근" },
   { id: "barbell-overhead-press", name: "바벨 오버헤드 프레스", category: "shoulder", muscle: "전면 어깨" },
   { id: "arnold-press", name: "아놀드 프레스", category: "shoulder", muscle: "전면/측면 어깨" },
+  { id: "side-lateral-raise", name: "사이드 레터럴 레이즈", category: "shoulder", muscle: "측면 어깨" },
   { id: "dumbbell-lateral-raise", name: "덤벨 레터럴 레이즈", category: "shoulder", muscle: "측면 어깨" },
   { id: "rear-delt-fly", name: "덤벨 리어 델트 플라이", category: "shoulder", muscle: "후면 어깨" },
   { id: "upright-row", name: "바벨 업라이트 로우", category: "shoulder", muscle: "측면 어깨/승모" },
@@ -155,6 +159,21 @@ export const SET_PRESETS = [
   { label: "4세트 × 12회", sets: "4", reps: "12" },
   { label: "5세트 × 8회", sets: "5", reps: "8" },
 ] as const
+
+export type ExerciseField = "weight" | "reps" | "sets"
+
+export type ExerciseMetricFieldDefinition = {
+  field: ExerciseField
+  label: string
+  unit: string
+  placeholder: string
+}
+
+export type ExerciseMetricProfile = {
+  trackingMode: "setBased" | "singleSession"
+  fields: readonly [ExerciseMetricFieldDefinition, ExerciseMetricFieldDefinition, ExerciseMetricFieldDefinition]
+  presetValues?: readonly { label: string; values: Partial<Record<ExerciseField, string>> }[]
+}
 
 export type DayKey = (typeof DAY_META)[number]["key"]
 export type BodyPart = (typeof BODY_PARTS)[number]
@@ -204,6 +223,7 @@ export type ExerciseDraft = {
   weight: string
   reps: string
   sets: string
+  supersetGroupId: string | null
 }
 
 export type DayRoutineDraft = {
@@ -212,6 +232,13 @@ export type DayRoutineDraft = {
 }
 
 export type RoutineMap = Record<DayKey, DayRoutineDraft>
+
+export type RoutineExerciseGroup = {
+  id: string
+  isSuperset: boolean
+  supersetGroupId: string | null
+  exercises: ExerciseDraft[]
+}
 
 export type UserProfile = {
   gender: Gender
@@ -280,6 +307,65 @@ export function createEmptyRoutineMap(): RoutineMap {
   }
 }
 
+const STRENGTH_PROFILE: ExerciseMetricProfile = {
+  trackingMode: "setBased",
+  fields: [
+    { field: "weight", label: "무게", unit: "kg", placeholder: "0" },
+    { field: "reps", label: "횟수", unit: "회", placeholder: "0" },
+    { field: "sets", label: "세트", unit: "세트", placeholder: "0" },
+  ],
+  presetValues: SET_PRESETS.map((preset) => ({
+    label: preset.label,
+    values: {
+      reps: preset.reps,
+      sets: preset.sets,
+    },
+  })),
+}
+
+const TREADMILL_PROFILE: ExerciseMetricProfile = {
+  trackingMode: "singleSession",
+  fields: [
+    { field: "weight", label: "인클라인", unit: "%", placeholder: "0" },
+    { field: "reps", label: "속도", unit: "km/h", placeholder: "0" },
+    { field: "sets", label: "시간", unit: "분", placeholder: "0" },
+  ],
+}
+
+const CYCLE_PROFILE: ExerciseMetricProfile = {
+  trackingMode: "singleSession",
+  fields: [
+    { field: "weight", label: "강도", unit: "레벨", placeholder: "0" },
+    { field: "reps", label: "시간", unit: "분", placeholder: "0" },
+    { field: "sets", label: "거리", unit: "km", placeholder: "0" },
+  ],
+}
+
+const ELLIPTICAL_PROFILE: ExerciseMetricProfile = {
+  trackingMode: "singleSession",
+  fields: [
+    { field: "weight", label: "강도", unit: "레벨", placeholder: "0" },
+    { field: "reps", label: "시간", unit: "분", placeholder: "0" },
+    { field: "sets", label: "거리", unit: "km", placeholder: "0" },
+  ],
+}
+
+const ROWING_PROFILE: ExerciseMetricProfile = {
+  trackingMode: "singleSession",
+  fields: [
+    { field: "weight", label: "강도", unit: "레벨", placeholder: "0" },
+    { field: "reps", label: "시간", unit: "분", placeholder: "0" },
+    { field: "sets", label: "거리", unit: "m", placeholder: "0" },
+  ],
+}
+
+const EXERCISE_METRIC_PROFILE_MAP: Partial<Record<MachineId, ExerciseMetricProfile>> = {
+  treadmill: TREADMILL_PROFILE,
+  cycle: CYCLE_PROFILE,
+  elliptical: ELLIPTICAL_PROFILE,
+  rowing: ROWING_PROFILE,
+}
+
 const MACHINE_VISUAL_MAP: Record<MachineId, MachineVisualKey> = {
   fly: "fly",
   "chest-press": "pressMachine",
@@ -306,7 +392,10 @@ const MACHINE_VISUAL_MAP: Record<MachineId, MachineVisualKey> = {
   "barbell-back-squat": "squat",
   "front-squat": "squat",
   "goblet-squat": "squat",
+  "box-squat": "squat",
   "romanian-deadlift": "hinge",
+  "conventional-deadlift": "hinge",
+  "clean-deadlift": "hinge",
   "dumbbell-lunge": "lunge",
   "bulgarian-split-squat": "lunge",
   "barbell-hip-thrust": "hipThrust",
@@ -316,6 +405,7 @@ const MACHINE_VISUAL_MAP: Record<MachineId, MachineVisualKey> = {
   "rear-delt": "raise",
   "barbell-overhead-press": "shoulderPress",
   "arnold-press": "shoulderPress",
+  "side-lateral-raise": "raise",
   "dumbbell-lateral-raise": "raise",
   "rear-delt-fly": "raise",
   "upright-row": "raise",
@@ -402,6 +492,187 @@ export function getMachineVisualKey(machineId: string, fallbackCategory?: Machin
 
 export function getMachineVisualLabel(machineId: string, fallbackCategory?: MachineCategoryKey) {
   return MACHINE_VISUAL_LABEL_MAP[getMachineVisualKey(machineId, fallbackCategory)]
+}
+
+export function getExerciseMetricProfile(machineId: string): ExerciseMetricProfile {
+  return EXERCISE_METRIC_PROFILE_MAP[machineId as MachineId] ?? STRENGTH_PROFILE
+}
+
+export function isSetBasedExercise(machineId: string) {
+  return getExerciseMetricProfile(machineId).trackingMode === "setBased"
+}
+
+export function canExerciseUseSuperset(machineId: string) {
+  return isSetBasedExercise(machineId)
+}
+
+export function isSupersetPair(
+  previousExercise?: Pick<ExerciseDraft, "supersetGroupId"> | null,
+  currentExercise?: Pick<ExerciseDraft, "supersetGroupId"> | null,
+) {
+  return Boolean(
+    previousExercise &&
+      currentExercise &&
+      previousExercise.supersetGroupId &&
+      previousExercise.supersetGroupId === currentExercise.supersetGroupId,
+  )
+}
+
+export function canToggleSupersetPair(exercises: ExerciseDraft[], index: number) {
+  if (index <= 0) {
+    return false
+  }
+
+  const previousExercise = exercises[index - 1]
+  const currentExercise = exercises[index]
+
+  if (!previousExercise || !currentExercise) {
+    return false
+  }
+
+  if (!canExerciseUseSuperset(previousExercise.machineId) || !canExerciseUseSuperset(currentExercise.machineId)) {
+    return false
+  }
+
+  return isSupersetPair(previousExercise, currentExercise) || (!previousExercise.supersetGroupId && !currentExercise.supersetGroupId)
+}
+
+function normalizeExerciseSupersetsInternal(exercises: ExerciseDraft[]) {
+  const groupEntries = new Map<string, number[]>()
+
+  exercises.forEach((exercise, index) => {
+    if (!exercise.supersetGroupId) {
+      return
+    }
+
+    const nextIndices = groupEntries.get(exercise.supersetGroupId) ?? []
+    nextIndices.push(index)
+    groupEntries.set(exercise.supersetGroupId, nextIndices)
+  })
+
+  return exercises.map((exercise) => {
+    if (!exercise.supersetGroupId) {
+      return { ...exercise, supersetGroupId: null }
+    }
+
+    const indices = groupEntries.get(exercise.supersetGroupId) ?? []
+    const isValidPair =
+      indices.length === 2 &&
+      indices[1] === indices[0] + 1 &&
+      indices.every((index) => canExerciseUseSuperset(exercises[index]?.machineId ?? ""))
+
+    return {
+      ...exercise,
+      supersetGroupId: isValidPair ? exercise.supersetGroupId : null,
+    }
+  })
+}
+
+export function normalizeExerciseSupersets(exercises: ExerciseDraft[]) {
+  return normalizeExerciseSupersetsInternal(exercises)
+}
+
+export function createSupersetGroupId(dayKey: DayKey) {
+  return `${dayKey}-superset-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+}
+
+export function toggleSupersetPair(exercises: ExerciseDraft[], index: number, dayKey: DayKey) {
+  if (!canToggleSupersetPair(exercises, index)) {
+    return exercises
+  }
+
+  const previousExercise = exercises[index - 1]
+  const currentExercise = exercises[index]
+
+  if (isSupersetPair(previousExercise, currentExercise)) {
+    return normalizeExerciseSupersets(
+      exercises.map((exercise, exerciseIndex) =>
+        exerciseIndex === index - 1 || exerciseIndex === index ? { ...exercise, supersetGroupId: null } : exercise,
+      ),
+    )
+  }
+
+  const supersetGroupId = createSupersetGroupId(dayKey)
+  const sharedSets = previousExercise.sets || currentExercise.sets
+
+  return normalizeExerciseSupersets(
+    exercises.map((exercise, exerciseIndex) =>
+      exerciseIndex === index - 1 || exerciseIndex === index
+        ? {
+            ...exercise,
+            supersetGroupId,
+            sets: sharedSets || exercise.sets,
+          }
+        : exercise,
+    ),
+  )
+}
+
+export function groupRoutineExercises(exercises: ExerciseDraft[]): RoutineExerciseGroup[] {
+  const normalizedExercises = normalizeExerciseSupersets(exercises)
+  const groups: RoutineExerciseGroup[] = []
+
+  for (let index = 0; index < normalizedExercises.length; index += 1) {
+    const exercise = normalizedExercises[index]
+    const nextExercise = normalizedExercises[index + 1]
+
+    if (isSupersetPair(exercise, nextExercise)) {
+      groups.push({
+        id: exercise.supersetGroupId ?? exercise.id,
+        isSuperset: true,
+        supersetGroupId: exercise.supersetGroupId,
+        exercises: [exercise, nextExercise],
+      })
+      index += 1
+      continue
+    }
+
+    groups.push({
+      id: exercise.id,
+      isSuperset: false,
+      supersetGroupId: null,
+      exercises: [exercise],
+    })
+  }
+
+  return groups
+}
+
+export function formatSupersetExerciseNames(exercises: Pick<ExerciseDraft, "machineName">[]) {
+  if (exercises.length === 0) {
+    return ""
+  }
+
+  if (exercises.length === 1) {
+    return exercises[0].machineName
+  }
+
+  return `${exercises[0].machineName} + ${exercises[1].machineName}`
+}
+
+export function isExerciseConfigured(exercise: Pick<ExerciseDraft, "machineId" | "weight" | "reps" | "sets">) {
+  const profile = getExerciseMetricProfile(exercise.machineId)
+  return profile.fields.every((field) => Number(exercise[field.field]) > 0)
+}
+
+export function formatExerciseMetricSummary(
+  exercise: Pick<ExerciseDraft, "machineId" | "weight" | "reps" | "sets">,
+  emptyLabel = "미입력",
+) {
+  const profile = getExerciseMetricProfile(exercise.machineId)
+  const values = profile.fields
+    .map((field) => {
+      const raw = exercise[field.field]
+      return raw ? `${raw}${field.unit}` : ""
+    })
+    .filter(Boolean)
+
+  return values.length > 0 ? values.join(" · ") : emptyLabel
+}
+
+export function getExerciseMetricHint(machineId: string) {
+  const profile = getExerciseMetricProfile(machineId)
+  return `${profile.fields.map((field) => field.label).join(", ")}을 모두 입력해 주세요`
 }
 
 export function getRoutineFocusOptions(goal: GoalKey): readonly RoutineFocus[] {
@@ -606,7 +877,8 @@ export function normalizeRoutineMap(value: unknown): RoutineMap {
     initial[day.key] = {
       bodyParts: normalizeBodyParts(parsedRoutine.bodyParts ?? parsedRoutine.bodyPart),
       exercises: Array.isArray(parsedRoutine.exercises)
-        ? parsedRoutine.exercises.flatMap((exercise) => {
+        ? normalizeExerciseSupersetsInternal(
+            parsedRoutine.exercises.flatMap((exercise) => {
             if (!exercise || typeof exercise !== "object") {
               return []
             }
@@ -624,9 +896,14 @@ export function normalizeRoutineMap(value: unknown): RoutineMap {
                 weight: typeof candidateExercise.weight === "string" ? candidateExercise.weight : "",
                 reps: typeof candidateExercise.reps === "string" ? candidateExercise.reps : "",
                 sets: typeof candidateExercise.sets === "string" ? candidateExercise.sets : "",
+                supersetGroupId:
+                  typeof candidateExercise.supersetGroupId === "string" && candidateExercise.supersetGroupId.length > 0
+                    ? candidateExercise.supersetGroupId
+                    : null,
               },
             ]
-          })
+          }),
+          )
         : [],
     }
   })
