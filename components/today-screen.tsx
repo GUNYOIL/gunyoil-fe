@@ -175,6 +175,15 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
 
   const { totalSets, doneSets, pct } = useMemo(() => getCompletion(exerciseGroups), [exerciseGroups])
   const remaining = totalSets - doneSets
+  const supersetGroupCount = exerciseGroups.filter((group) => group.isSuperset).length
+  const remainingLabel =
+    remaining > 0 ? `아직 ${remaining}개 남았어요` : totalSets > 0 ? "오늘 기록을 모두 마쳤어요" : "기록할 세트가 없어요"
+  const routineHintLabel =
+    totalSets > 0
+      ? remaining > 0
+        ? `다음은 ${remaining === totalSets ? "첫 세트" : "남은 세트"}부터 기록하세요`
+        : "기록을 저장하면 오늘 운동이 정리됩니다"
+      : "오늘은 기록할 운동이 없습니다"
 
   const handleSave = () => {
     setSaved(true)
@@ -224,6 +233,7 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
               <div>
                 <p className="text-[12px] font-semibold text-[#8B95A1]">오늘 진행률</p>
                 <p className="mt-1 text-[32px] font-bold leading-none text-[#191F28]">{pct}%</p>
+                <p className="mt-2 text-[13px] font-medium text-[#4E5968]">{remainingLabel}</p>
               </div>
               <div className="text-right">
                 <p className="text-[12px] font-semibold text-[#8B95A1]">완료 목표</p>
@@ -249,9 +259,17 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
                 <p className="mt-1 text-[18px] font-bold text-[#191F28]">{remaining}개</p>
               </div>
               <div className="rounded-[18px] bg-[#F7F8FA] px-3 py-3">
-                <p className="text-[11px] font-semibold text-[#8B95A1]">운동 수</p>
-                <p className="mt-1 text-[18px] font-bold text-[#191F28]">{exercises.length}개</p>
+                <p className="text-[11px] font-semibold text-[#8B95A1]">묶음 구성</p>
+                <p className="mt-1 text-[18px] font-bold text-[#191F28]">
+                  {exerciseGroups.length}개
+                  {supersetGroupCount > 0 ? <span className="ml-1 text-[12px] font-semibold text-[#8B95A1]">· 슈퍼세트 {supersetGroupCount}개</span> : null}
+                </p>
               </div>
+            </div>
+
+            <div className="mt-3 rounded-[18px] bg-[#EBF3FE] px-3 py-3">
+              <p className="text-[11px] font-semibold text-[#3182F6]">안내</p>
+              <p className="mt-1 text-[13px] font-medium text-[#1F3D78]">{routineHintLabel}</p>
             </div>
           </div>
         </div>
@@ -260,7 +278,7 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
           <div className="rounded-[20px] bg-[#FFFFFF] px-4 py-3 shadow-[inset_0_0_0_1px_rgba(229,232,235,1)]">
             <span className="text-[13px] font-semibold text-[#4E5968]">오늘 운동</span>
             <p className="mt-1 text-[12px] text-[#8B95A1]">
-              근력 운동은 세트 단위, 유산소는 완료 버튼으로 기록됩니다. 슈퍼세트는 한 라운드로 같이 진행됩니다
+              근력 운동은 세트 단위, 유산소는 완료 버튼으로 기록됩니다. 지금 남은 세트부터 차례로 처리하면 됩니다
             </p>
           </div>
         </div>
@@ -276,6 +294,12 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
             const doneCount = primaryExercise.completions.filter((state) => state === "done").length
             const isExpanded = expandedId === group.id
             const isDone = doneCount === primaryExercise.completions.length
+            const nextPendingSetIndex = primaryExercise.completions.findIndex((state) => state !== "done")
+            const totalGroupSets = group.records.reduce((accumulator, record) => accumulator + record.completions.length, 0)
+            const completedGroupSets = group.records.reduce(
+              (accumulator, record) => accumulator + record.completions.filter((state) => state === "done").length,
+              0,
+            )
 
             if (group.isSuperset) {
               return (
@@ -304,7 +328,9 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
                       <p className="mt-2 truncate text-[14px] font-semibold text-[#191F28]">
                         {formatSupersetExerciseNames(group.records.map((record) => ({ machineName: record.name })))}
                       </p>
-                      <p className="mt-1 text-[12px] text-[#8B95A1]">한 라운드에 함께 진행됩니다</p>
+                      <p className="mt-1 text-[12px] text-[#8B95A1]">
+                        한 라운드에 함께 진행됩니다 · {completedGroupSets}/{totalGroupSets}세트 완료
+                      </p>
                     </div>
                     <div className="ml-2 shrink-0 text-right">
                       <p className={`text-[12px] font-semibold ${isDone ? "text-[#2CB52C]" : "text-[#3182F6]"}`}>
@@ -342,7 +368,9 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
                         className={`h-10 w-10 rounded-xl text-[13px] font-bold transition-all active:scale-95 ${
                           state === "done"
                             ? "bg-[#3182F6] text-white"
-                            : "border border-[#E5E8EB] bg-[#F8FAFC] text-[#8B95A1]"
+                            : index === nextPendingSetIndex
+                              ? "border-2 border-[#3182F6] bg-[#EBF3FE] text-[#3182F6]"
+                              : "border border-[#E5E8EB] bg-[#F8FAFC] text-[#8B95A1]"
                         }`}
                         onClick={() => toggleSet(primaryExercise.id, index)}
                         type="button"
@@ -431,6 +459,8 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
                         className={`h-10 w-10 rounded-xl text-[13px] font-bold transition-all active:scale-95 ${
                           state === "done"
                             ? "bg-[#3182F6] text-white"
+                            : index === nextPendingSetIndex
+                              ? "border-2 border-[#3182F6] bg-[#EBF3FE] text-[#3182F6]"
                             : "border border-[#E5E8EB] bg-[#F8FAFC] text-[#8B95A1]"
                         }`}
                         onClick={() => toggleSet(exercise.id, index)}
