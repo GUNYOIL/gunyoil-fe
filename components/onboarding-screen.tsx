@@ -6,24 +6,32 @@ import {
   GOAL_OPTIONS,
   MACHINE_CATEGORIES,
   MACHINES,
-  SET_PRESETS,
   calculateProteinTarget,
+  canToggleSupersetPair,
   createEmptyRoutineMap,
   createExerciseId,
+  formatExerciseMetricSummary,
   formatBodyParts,
+  formatSupersetExerciseNames,
   getDayMeta,
-  getRoutineDayCardPreview,
+  getExerciseMetricHint,
+  getExerciseMetricProfile,
   getGoalOption,
   getMachineVisualLabel,
   getPreferredMachineCategories,
+  getRoutineDayCardPreview,
   getRoutineFocusHint,
   getRoutineFocusLabel,
   getRoutineFocusOptions,
   hasWorkoutBodyParts,
+  isExerciseConfigured,
   isRestDay,
+  isSupersetPair,
+  normalizeExerciseSupersets,
+  toggleSupersetPair,
   toggleBodyPartSelection,
-  type ExerciseDraft,
   type DayKey,
+  type ExerciseField,
   type Gender,
   type GoalKey,
   type MachineCategoryKey,
@@ -32,18 +40,13 @@ import {
   type RoutineMap,
 } from "@/lib/app-config"
 import type { OnboardingProfileDraft } from "@/lib/session"
-import { sanitizePositiveIntegerInput } from "@/lib/numeric-input"
+import { sanitizeNonNegativeDecimalInput, sanitizePositiveIntegerInput } from "@/lib/numeric-input"
 import BrandMark from "./brand-mark"
 import { SearchIcon, Trash2Icon, XIcon } from "./icons"
 import MachineVisual from "./machine-visual"
 
 type Step = 1 | 2
 type RoutineStage = "focus" | "exercise" | "details"
-type ExerciseField = "weight" | "reps" | "sets"
-
-function isExerciseConfigured(exercise: ExerciseDraft) {
-  return Number(exercise.weight) > 0 && Number(exercise.reps) > 0 && Number(exercise.sets) > 0
-}
 
 export default function OnboardingScreen({
   initialProfile,
@@ -171,6 +174,7 @@ export default function OnboardingScreen({
             weight: "",
             reps: "",
             sets: "",
+            supersetGroupId: null,
           },
         ],
       },
@@ -182,19 +186,37 @@ export default function OnboardingScreen({
       ...previous,
       [dayKey]: {
         ...previous[dayKey],
-        exercises: previous[dayKey].exercises.filter((exercise) => exercise.id !== exerciseId),
+        exercises: normalizeExerciseSupersets(previous[dayKey].exercises.filter((exercise) => exercise.id !== exerciseId)),
       },
     }))
   }
 
   const updateExercise = (dayKey: DayKey, exerciseId: string, field: ExerciseField, value: string) => {
+    setRoutines((previous) => {
+      const targetExercise = previous[dayKey].exercises.find((exercise) => exercise.id === exerciseId)
+
+      return {
+        ...previous,
+        [dayKey]: {
+          ...previous[dayKey],
+          exercises: previous[dayKey].exercises.map((exercise) => {
+            if (field === "sets" && targetExercise?.supersetGroupId && exercise.supersetGroupId === targetExercise.supersetGroupId) {
+              return { ...exercise, sets: value }
+            }
+
+            return exercise.id === exerciseId ? { ...exercise, [field]: value } : exercise
+          }),
+        },
+      }
+    })
+  }
+
+  const toggleExerciseSuperset = (dayKey: DayKey, index: number) => {
     setRoutines((previous) => ({
       ...previous,
       [dayKey]: {
         ...previous[dayKey],
-        exercises: previous[dayKey].exercises.map((exercise) =>
-          exercise.id === exerciseId ? { ...exercise, [field]: value } : exercise,
-        ),
+        exercises: toggleSupersetPair(previous[dayKey].exercises, index, dayKey),
       },
     }))
   }
@@ -228,7 +250,7 @@ export default function OnboardingScreen({
           ? `${completedRoutineDays.length}일 루틴 완료`
           : workingDays.length === 0
             ? "최소 1일 이상의 운동일을 설정해 주세요"
-            : `${incompleteDays.length}일의 세트 정보를 더 입력해 주세요`
+            : `${incompleteDays.length}일의 운동 정보를 더 입력해 주세요`
 
   const progressLabel = step === 1 ? "2/3" : "3/3"
   const stageTitle = step === 1 ? "기본 정보" : "루틴 설정"
@@ -383,7 +405,7 @@ export default function OnboardingScreen({
                     ? "요일별 루틴 유형을 정해 주세요"
                     : routineStage === "exercise"
                       ? "해당 요일에 할 운동만 골라 주세요"
-                      : "무게, 횟수, 세트를 채워 주세요"}
+                      : "운동 값을 모두 입력해 주세요"}
                 </p>
               </div>
               <div className="shrink-0 rounded-[18px] bg-[#F7F8FA] px-3 py-2 text-right">
@@ -398,7 +420,7 @@ export default function OnboardingScreen({
               {[
                 { key: "focus" as const, label: "부위 설정", enabled: true },
                 { key: "exercise" as const, label: "운동 선택", enabled: canGoExerciseStage },
-                { key: "details" as const, label: "세트 입력", enabled: canGoDetailStage },
+                { key: "details" as const, label: "운동 입력", enabled: canGoDetailStage },
               ].map((item) => (
                 <button
                   key={item.key}
@@ -656,29 +678,56 @@ export default function OnboardingScreen({
                     <p className="mt-3 rounded-xl bg-[#FFFFFF] px-3 py-3 text-[13px] text-[#8B95A1]">선택된 운동이 없습니다</p>
                   ) : (
                     <div className="mt-3 flex flex-col gap-2">
-                      {selectedDayRoutine.exercises.map((exercise) => (
-                        <div
-                          key={exercise.id}
-                          className="flex items-center justify-between rounded-xl border border-[#E5E8EB] bg-[#FFFFFF] px-3 py-3"
-                        >
-                          <div className="flex min-w-0 items-center gap-3">
-                            <MachineVisual machineId={exercise.machineId} size={40} />
-                            <div className="min-w-0">
-                              <p className="truncate font-semibold text-[#191F28]">{exercise.machineName}</p>
-                              <p className="mt-1 text-[11px] text-[#8B95A1]">
-                                {exercise.weight || "-"}kg · {exercise.reps || "-"}회 · {exercise.sets || "-"}세트
-                              </p>
+                      {selectedDayRoutine.exercises.map((exercise, index) => {
+                        const isPairedWithPrevious = isSupersetPair(selectedDayRoutine.exercises[index - 1], exercise)
+                        const canTogglePair = canToggleSupersetPair(selectedDayRoutine.exercises, index)
+
+                        return (
+                          <div key={exercise.id} className="rounded-xl border border-[#E5E8EB] bg-[#FFFFFF] px-3 py-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <MachineVisual machineId={exercise.machineId} size={40} />
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="truncate font-semibold text-[#191F28]">{exercise.machineName}</p>
+                                    {exercise.supersetGroupId ? (
+                                      <span className="shrink-0 rounded-full bg-[#EBF3FE] px-2 py-0.5 text-[10px] font-semibold text-[#3182F6]">
+                                        슈퍼세트
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <p className="mt-1 text-[11px] text-[#8B95A1]">{formatExerciseMetricSummary(exercise)}</p>
+                                  {isPairedWithPrevious ? (
+                                    <p className="mt-1 text-[11px] text-[#3182F6]">
+                                      {formatSupersetExerciseNames([selectedDayRoutine.exercises[index - 1], exercise])}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <button
+                                className="rounded-full p-1 text-[#8B95A1]"
+                                onClick={() => removeExercise(selectedDay, exercise.id)}
+                                type="button"
+                              >
+                                <Trash2Icon size={16} />
+                              </button>
                             </div>
+                            {canTogglePair ? (
+                              <button
+                                className={`mt-3 w-full rounded-xl px-3 py-2 text-[12px] font-semibold ${
+                                  isPairedWithPrevious
+                                    ? "bg-[#F2F4F6] text-[#4E5968]"
+                                    : "bg-[#EBF3FE] text-[#3182F6]"
+                                }`}
+                                onClick={() => toggleExerciseSuperset(selectedDay, index)}
+                                type="button"
+                              >
+                                {isPairedWithPrevious ? "슈퍼세트 해제" : "위 운동과 슈퍼세트"}
+                              </button>
+                            ) : null}
                           </div>
-                          <button
-                            className="rounded-full p-1 text-[#8B95A1]"
-                            onClick={() => removeExercise(selectedDay, exercise.id)}
-                            type="button"
-                          >
-                            <Trash2Icon size={16} />
-                          </button>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>
@@ -691,7 +740,7 @@ export default function OnboardingScreen({
                   <div className="rounded-[24px] border border-[#E5E8EB] bg-[#FFFFFF] p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-[12px] font-semibold text-[#8B95A1]">세트 입력</p>
+                        <p className="text-[12px] font-semibold text-[#8B95A1]">운동 입력</p>
                         <p className="mt-1 text-[13px] text-[#4E5968]">
                           {selectedDayMeta.full} · {selectedDayBodyPartLabel}
                         </p>
@@ -702,84 +751,103 @@ export default function OnboardingScreen({
                     </div>
 
                     <div className="mt-4 flex flex-col gap-3">
-                      {selectedDayRoutine.exercises.map((exercise) => (
-                        <div key={exercise.id} className="rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] p-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex min-w-0 items-center gap-3">
-                              <MachineVisual machineId={exercise.machineId} size={40} />
-                              <div className="min-w-0">
-                                <p className="truncate text-[13px] font-semibold text-[#191F28]">{exercise.machineName}</p>
-                                <p className="mt-1 text-[11px] text-[#8B95A1]">무게, 횟수, 세트를 모두 입력해 주세요</p>
-                              </div>
-                            </div>
-                            <button
-                              className="rounded-full p-1 text-[#8B95A1]"
-                              onClick={() => removeExercise(selectedDay, exercise.id)}
-                              type="button"
-                            >
-                              <Trash2Icon size={16} />
-                            </button>
-                          </div>
+                      {selectedDayRoutine.exercises.map((exercise) => {
+                        const profile = getExerciseMetricProfile(exercise.machineId)
+                        const sanitizeMetricValue =
+                          profile.trackingMode === "singleSession"
+                            ? sanitizeNonNegativeDecimalInput
+                            : sanitizePositiveIntegerInput
+                        const metricInputMode = profile.trackingMode === "singleSession" ? "decimal" : "numeric"
+                        const metricPattern =
+                          profile.trackingMode === "singleSession" ? "[0-9]*[.]?[0-9]*" : "[0-9]*"
 
-                          <div className="mt-3 flex flex-col gap-2">
-                            {[
-                              { field: "weight" as const, label: "무게", unit: "kg" },
-                              { field: "reps" as const, label: "횟수", unit: "회" },
-                              { field: "sets" as const, label: "세트", unit: "세트" },
-                            ].map((item) => (
-                              <label key={item.field} className="flex items-center justify-between gap-3 rounded-xl bg-[#FFFFFF] px-3 py-3">
-                                <span className="text-[13px] font-medium text-[#4E5968]">{item.label}</span>
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    className="w-20 bg-transparent text-right text-[14px] font-semibold text-[#191F28] outline-none"
-                                    inputMode="numeric"
-                                    onChange={(event) =>
-                                      updateExercise(
-                                        selectedDay,
-                                        exercise.id,
-                                        item.field,
-                                        sanitizePositiveIntegerInput(event.target.value),
-                                      )
-                                    }
-                                    placeholder="0"
-                                    pattern="[0-9]*"
-                                    type="text"
-                                    value={exercise[item.field]}
-                                  />
-                                  <span className="text-[11px] text-[#8B95A1]">{item.unit}</span>
+                        return (
+                          <div key={exercise.id} className="rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <MachineVisual machineId={exercise.machineId} size={40} />
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="truncate text-[13px] font-semibold text-[#191F28]">{exercise.machineName}</p>
+                                    {exercise.supersetGroupId ? (
+                                      <span className="shrink-0 rounded-full bg-[#EBF3FE] px-2 py-0.5 text-[10px] font-semibold text-[#3182F6]">
+                                        슈퍼세트
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <p className="mt-1 text-[11px] text-[#8B95A1]">
+                                    {exercise.supersetGroupId ? "슈퍼세트는 세트 수가 함께 맞춰집니다" : getExerciseMetricHint(exercise.machineId)}
+                                  </p>
                                 </div>
-                              </label>
-                            ))}
-                          </div>
-
-                          <div className="mt-2 flex gap-1.5">
-                            {SET_PRESETS.map((preset) => (
+                              </div>
                               <button
-                                key={preset.label}
-                                className="flex-1 rounded-lg border border-[#E5E8EB] bg-[#FFFFFF] py-1.5 text-[11px] font-medium text-[#4E5968]"
-                                onClick={() => {
-                                  updateExercise(selectedDay, exercise.id, "sets", preset.sets)
-                                  updateExercise(selectedDay, exercise.id, "reps", preset.reps)
-                                }}
+                                className="rounded-full p-1 text-[#8B95A1]"
+                                onClick={() => removeExercise(selectedDay, exercise.id)}
                                 type="button"
                               >
-                                {preset.label}
+                                <Trash2Icon size={16} />
                               </button>
-                            ))}
+                            </div>
+
+                            <div className="mt-3 flex flex-col gap-2">
+                              {profile.fields.map((item) => (
+                                <label key={item.field} className="flex items-center justify-between gap-3 rounded-xl bg-[#FFFFFF] px-3 py-3">
+                                  <span className="text-[13px] font-medium text-[#4E5968]">{item.label}</span>
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      className="w-20 bg-transparent text-right text-[14px] font-semibold text-[#191F28] outline-none"
+                                      inputMode={metricInputMode}
+                                      onChange={(event) =>
+                                        updateExercise(
+                                          selectedDay,
+                                          exercise.id,
+                                          item.field,
+                                          sanitizeMetricValue(event.target.value),
+                                        )
+                                      }
+                                      placeholder={item.placeholder}
+                                      pattern={metricPattern}
+                                      type="text"
+                                      value={exercise[item.field]}
+                                    />
+                                    <span className="text-[11px] text-[#8B95A1]">{item.unit}</span>
+                                  </div>
+                                </label>
+                              ))}
+                            </div>
+
+                            {profile.presetValues ? (
+                              <div className="mt-2 flex gap-1.5">
+                                {profile.presetValues.map((preset) => (
+                                  <button
+                                    key={preset.label}
+                                    className="flex-1 rounded-lg border border-[#E5E8EB] bg-[#FFFFFF] py-1.5 text-[11px] font-medium text-[#4E5968]"
+                                    onClick={() => {
+                                      Object.entries(preset.values).forEach(([field, value]) => {
+                                        updateExercise(selectedDay, exercise.id, field as ExerciseField, value ?? "")
+                                      })
+                                    }}
+                                    type="button"
+                                  >
+                                    {preset.label}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 ) : isRestDay(selectedDayRoutine.bodyParts) ? (
                   <div className="rounded-[24px] border border-[#E5E8EB] bg-[#FFFFFF] px-4 py-6 text-center">
                     <p className="text-[14px] font-semibold text-[#191F28]">{selectedDayMeta.full}은 휴식일입니다</p>
-                    <p className="mt-2 text-[12px] text-[#8B95A1]">휴식일은 세트 입력 없이 완료됩니다</p>
+                    <p className="mt-2 text-[12px] text-[#8B95A1]">휴식일은 운동 입력 없이 완료됩니다</p>
                   </div>
                 ) : (
                   <div className="rounded-[24px] border border-[#E5E8EB] bg-[#FFFFFF] px-4 py-6 text-center">
                     <p className="text-[14px] font-semibold text-[#191F28]">운동을 먼저 선택해 주세요</p>
-                    <p className="mt-2 text-[12px] text-[#8B95A1]">운동 선택 단계에서 머신을 추가한 뒤 세트를 입력할 수 있습니다</p>
+                    <p className="mt-2 text-[12px] text-[#8B95A1]">운동 선택 단계에서 머신을 추가한 뒤 운동 값을 입력할 수 있습니다</p>
                   </div>
                 )}
 
@@ -919,7 +987,7 @@ export default function OnboardingScreen({
               }}
               type="button"
             >
-              {step === 1 ? "다음" : routineStage === "focus" ? "운동 선택" : routineStage === "exercise" ? "세트 입력" : "앱 시작하기"}
+              {step === 1 ? "다음" : routineStage === "focus" ? "운동 선택" : routineStage === "exercise" ? "운동 입력" : "앱 시작하기"}
             </button>
           </div>
         </div>

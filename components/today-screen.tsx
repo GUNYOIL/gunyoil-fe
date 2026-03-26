@@ -1,8 +1,21 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { DAY_META, formatBodyParts, getTodayDayKey, hasWorkoutBodyParts, isRestDay, type RoutineMap } from "@/lib/app-config"
-import { sanitizePositiveIntegerInput } from "@/lib/numeric-input"
+import {
+  DAY_META,
+  formatBodyParts,
+  formatExerciseMetricSummary,
+  formatSupersetExerciseNames,
+  getExerciseMetricHint,
+  getExerciseMetricProfile,
+  getTodayDayKey,
+  hasWorkoutBodyParts,
+  isSupersetPair,
+  isRestDay,
+  type ExerciseField,
+  type RoutineMap,
+} from "@/lib/app-config"
+import { sanitizeNonNegativeDecimalInput, sanitizePositiveIntegerInput } from "@/lib/numeric-input"
 import { CheckCircle2Icon, CircleIcon } from "./icons"
 import MachineVisual from "./machine-visual"
 
@@ -12,11 +25,17 @@ type ExerciseRecord = {
   id: string
   machineId: string
   name: string
-  targetWeight: number
-  targetReps: number
-  targetSets: number
-  sets: SetState[]
-  actualReps: Record<number, string>
+  supersetGroupId: string | null
+  targetValues: Record<ExerciseField, number>
+  completions: SetState[]
+  actualSetReps: Record<number, string>
+  actualValues: Partial<Record<ExerciseField, string>>
+}
+
+type ExerciseRecordGroup = {
+  id: string
+  isSuperset: boolean
+  records: ExerciseRecord[]
 }
 
 function createExerciseRecords(routines: RoutineMap) {
@@ -28,25 +47,57 @@ function createExerciseRecords(routines: RoutineMap) {
   }
 
   return routine.exercises.map((exercise) => {
-    const targetSets = Math.max(1, Number(exercise.sets) || 1)
+    const profile = getExerciseMetricProfile(exercise.machineId)
+    const completionCount = profile.trackingMode === "setBased" ? Math.max(1, Number(exercise.sets) || 1) : 1
 
     return {
       id: exercise.id,
       machineId: exercise.machineId,
       name: exercise.machineName,
-      targetWeight: Number(exercise.weight) || 0,
-      targetReps: Number(exercise.reps) || 0,
-      targetSets,
-      sets: Array.from({ length: targetSets }, () => "idle" as const),
-      actualReps: {},
+      supersetGroupId: exercise.supersetGroupId,
+      targetValues: {
+        weight: Number(exercise.weight) || 0,
+        reps: Number(exercise.reps) || 0,
+        sets: Number(exercise.sets) || 0,
+      },
+      completions: Array.from({ length: completionCount }, () => "idle" as const),
+      actualSetReps: {},
+      actualValues: {},
     }
   })
 }
 
-function getCompletion(exercises: ExerciseRecord[]) {
-  const totalSets = exercises.reduce((accumulator, exercise) => accumulator + exercise.targetSets, 0)
-  const doneSets = exercises.reduce(
-    (accumulator, exercise) => accumulator + exercise.sets.filter((state) => state === "done").length,
+function groupExerciseRecords(exercises: ExerciseRecord[]): ExerciseRecordGroup[] {
+  const groups: ExerciseRecordGroup[] = []
+
+  for (let index = 0; index < exercises.length; index += 1) {
+    const exercise = exercises[index]
+    const nextExercise = exercises[index + 1]
+
+    if (isSupersetPair(exercise, nextExercise)) {
+      groups.push({
+        id: exercise.supersetGroupId ?? exercise.id,
+        isSuperset: true,
+        records: [exercise, nextExercise],
+      })
+      index += 1
+      continue
+    }
+
+    groups.push({
+      id: exercise.id,
+      isSuperset: false,
+      records: [exercise],
+    })
+  }
+
+  return groups
+}
+
+function getCompletion(exerciseGroups: ExerciseRecordGroup[]) {
+  const totalSets = exerciseGroups.reduce((accumulator, group) => accumulator + group.records[0].completions.length, 0)
+  const doneSets = exerciseGroups.reduce(
+    (accumulator, group) => accumulator + group.records[0].completions.filter((state) => state === "done").length,
     0,
   )
 
@@ -76,18 +127,28 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
   }, [routines])
 
   const hasRoutine = hasWorkoutBodyParts(todayRoutine?.bodyParts ?? []) && exercises.length > 0
+  const exerciseGroups = useMemo(() => groupExerciseRecords(exercises), [exercises])
 
   const toggleSet = (exerciseId: string, setIndex: number) => {
     setExercises((previous) =>
       previous.map((exercise) => {
-        if (exercise.id !== exerciseId) {
+        const targetExercise = previous.find((item) => item.id === exerciseId)
+        if (!targetExercise) {
           return exercise
         }
 
-        const currentDoneCount = exercise.sets.filter((state) => state === "done").length
+        const isSameGroup = targetExercise.supersetGroupId
+          ? exercise.supersetGroupId === targetExercise.supersetGroupId
+          : exercise.id === exerciseId
+
+        if (!isSameGroup) {
+          return exercise
+        }
+
+        const currentDoneCount = targetExercise.completions.filter((state) => state === "done").length
         const nextDoneCount = currentDoneCount === setIndex + 1 ? setIndex : setIndex + 1
-        const nextSets = exercise.sets.map((_, index) => (index < nextDoneCount ? "done" : "idle")) as SetState[]
-        return { ...exercise, sets: nextSets }
+        const nextCompletions = exercise.completions.map((_, index) => (index < nextDoneCount ? "done" : "idle")) as SetState[]
+        return { ...exercise, completions: nextCompletions }
       }),
     )
   }
@@ -96,13 +157,23 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
     setExercises((previous) =>
       previous.map((exercise) =>
         exercise.id === exerciseId
-          ? { ...exercise, actualReps: { ...exercise.actualReps, [setIndex]: value } }
+          ? { ...exercise, actualSetReps: { ...exercise.actualSetReps, [setIndex]: value } }
           : exercise,
       ),
     )
   }
 
-  const { totalSets, doneSets, pct } = useMemo(() => getCompletion(exercises), [exercises])
+  const setActualValue = (exerciseId: string, field: ExerciseField, value: string) => {
+    setExercises((previous) =>
+      previous.map((exercise) =>
+        exercise.id === exerciseId
+          ? { ...exercise, actualValues: { ...exercise.actualValues, [field]: value } }
+          : exercise,
+      ),
+    )
+  }
+
+  const { totalSets, doneSets, pct } = useMemo(() => getCompletion(exerciseGroups), [exerciseGroups])
   const remaining = totalSets - doneSets
 
   const handleSave = () => {
@@ -155,7 +226,7 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
                 <p className="mt-1 text-[32px] font-bold leading-none text-[#191F28]">{pct}%</p>
               </div>
               <div className="text-right">
-                <p className="text-[12px] font-semibold text-[#8B95A1]">완료 세트</p>
+                <p className="text-[12px] font-semibold text-[#8B95A1]">완료 목표</p>
                 <p className="mt-1 text-[18px] font-bold text-[#191F28]">
                   {doneSets}/{totalSets}
                 </p>
@@ -174,7 +245,7 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
 
             <div className="mt-4 grid grid-cols-2 gap-2">
               <div className="rounded-[18px] bg-[#F7F8FA] px-3 py-3">
-                <p className="text-[11px] font-semibold text-[#8B95A1]">남은 세트</p>
+                <p className="text-[11px] font-semibold text-[#8B95A1]">남은 목표</p>
                 <p className="mt-1 text-[18px] font-bold text-[#191F28]">{remaining}개</p>
               </div>
               <div className="rounded-[18px] bg-[#F7F8FA] px-3 py-3">
@@ -188,26 +259,148 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
         <div className="px-4 mb-2">
           <div className="rounded-[20px] bg-[#FFFFFF] px-4 py-3 shadow-[inset_0_0_0_1px_rgba(229,232,235,1)]">
             <span className="text-[13px] font-semibold text-[#4E5968]">오늘 운동</span>
-            <p className="mt-1 text-[12px] text-[#8B95A1]">세트 번호를 누르면 해당 세트까지 한 번에 완료됩니다</p>
+            <p className="mt-1 text-[12px] text-[#8B95A1]">
+              근력 운동은 세트 단위, 유산소는 완료 버튼으로 기록됩니다. 슈퍼세트는 한 라운드로 같이 진행됩니다
+            </p>
           </div>
         </div>
 
         <div className="flex flex-col gap-3 px-4 pb-4">
-          {exercises.map((exercise) => {
-            const doneCount = exercise.sets.filter((state) => state === "done").length
-            const isExpanded = expandedId === exercise.id
-            const isDone = doneCount === exercise.targetSets
+          {exerciseGroups.map((group) => {
+            const primaryExercise = group.records[0]
+            const profile = getExerciseMetricProfile(primaryExercise.machineId)
+            const sanitizeMetricValue =
+              profile.trackingMode === "singleSession" ? sanitizeNonNegativeDecimalInput : sanitizePositiveIntegerInput
+            const metricInputMode = profile.trackingMode === "singleSession" ? "decimal" : "numeric"
+            const metricPattern = profile.trackingMode === "singleSession" ? "[0-9]*[.]?[0-9]*" : "[0-9]*"
+            const doneCount = primaryExercise.completions.filter((state) => state === "done").length
+            const isExpanded = expandedId === group.id
+            const isDone = doneCount === primaryExercise.completions.length
+
+            if (group.isSuperset) {
+              return (
+                <div
+                  key={group.id}
+                  className={`overflow-hidden rounded-2xl border transition-colors ${
+                    isDone ? "border-[#2CB52C] bg-[#F6FFF6]" : "border-[#E5E8EB] bg-[#FFFFFF]"
+                  }`}
+                >
+                  <button
+                    className="flex w-full items-start justify-between px-4 py-3"
+                    onClick={() => setExpandedId(isExpanded ? null : group.id)}
+                    type="button"
+                  >
+                    <div className="min-w-0 text-left">
+                      <div className="flex items-center gap-2">
+                        {isDone ? (
+                          <CheckCircle2Icon className="shrink-0 text-[#2CB52C]" size={18} />
+                        ) : (
+                          <CircleIcon className="shrink-0 text-[#E5E8EB]" size={18} />
+                        )}
+                        <span className="rounded-full bg-[#EBF3FE] px-2 py-0.5 text-[10px] font-semibold text-[#3182F6]">
+                          슈퍼세트
+                        </span>
+                      </div>
+                      <p className="mt-2 truncate text-[14px] font-semibold text-[#191F28]">
+                        {formatSupersetExerciseNames(group.records.map((record) => ({ machineName: record.name })))}
+                      </p>
+                      <p className="mt-1 text-[12px] text-[#8B95A1]">한 라운드에 함께 진행됩니다</p>
+                    </div>
+                    <div className="ml-2 shrink-0 text-right">
+                      <p className={`text-[12px] font-semibold ${isDone ? "text-[#2CB52C]" : "text-[#3182F6]"}`}>
+                        {doneCount}/{primaryExercise.completions.length}
+                      </p>
+                      <p className="mt-1 text-[11px] text-[#8B95A1]">{isExpanded ? "세부 닫기" : "세부 기록"}</p>
+                    </div>
+                  </button>
+
+                  <div className="flex flex-col gap-2 px-4 pb-3">
+                    {group.records.map((record) => {
+                      const targetSummary = formatExerciseMetricSummary({
+                        machineId: record.machineId,
+                        weight: record.targetValues.weight > 0 ? String(record.targetValues.weight) : "",
+                        reps: record.targetValues.reps > 0 ? String(record.targetValues.reps) : "",
+                        sets: record.targetValues.sets > 0 ? String(record.targetValues.sets) : "",
+                      })
+
+                      return (
+                        <div key={record.id} className="flex items-center justify-between rounded-xl bg-[#F8FAFC] px-3 py-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <MachineVisual machineId={record.machineId} size={36} />
+                            <span className="truncate text-[13px] font-medium text-[#191F28]">{record.name}</span>
+                          </div>
+                          <span className="text-[12px] text-[#8B95A1]">목표 {targetSummary}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 px-4 pb-3">
+                    {primaryExercise.completions.map((state, index) => (
+                      <button
+                        key={index}
+                        className={`h-10 w-10 rounded-xl text-[13px] font-bold transition-all active:scale-95 ${
+                          state === "done"
+                            ? "bg-[#3182F6] text-white"
+                            : "border border-[#E5E8EB] bg-[#F8FAFC] text-[#8B95A1]"
+                        }`}
+                        onClick={() => toggleSet(primaryExercise.id, index)}
+                        type="button"
+                      >
+                        {index + 1}
+                      </button>
+                    ))}
+                  </div>
+
+                  {isExpanded ? (
+                    <div className="border-t border-[#E5E8EB] px-4 pb-4 pt-3">
+                      <div className="flex flex-col gap-3">
+                        {group.records.map((record) => (
+                          <div key={record.id} className="rounded-xl bg-[#F8FAFC] px-3 py-3">
+                            <p className="mb-2 text-[12px] font-semibold text-[#4E5968]">{record.name}</p>
+                            <div className="grid grid-cols-5 gap-2">
+                              {Array.from({ length: record.completions.length }, (_, index) => (
+                                <div key={index} className="flex flex-col items-center gap-1">
+                                  <span className="text-[11px] text-[#8B95A1]">{index + 1}세트</span>
+                                  <input
+                                    className="w-full rounded-lg border border-[#E5E8EB] bg-[#FFFFFF] py-2 text-center text-[13px] font-semibold text-[#191F28] outline-none"
+                                    onChange={(event) => setActualReps(record.id, index, sanitizePositiveIntegerInput(event.target.value))}
+                                    placeholder={String(record.targetValues.reps)}
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    type="text"
+                                    value={record.actualSetReps[index] ?? ""}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )
+            }
+
+            const exercise = group.records[0]
+            const targetSummary = formatExerciseMetricSummary({
+              machineId: exercise.machineId,
+              weight: exercise.targetValues.weight > 0 ? String(exercise.targetValues.weight) : "",
+              reps: exercise.targetValues.reps > 0 ? String(exercise.targetValues.reps) : "",
+              sets: exercise.targetValues.sets > 0 ? String(exercise.targetValues.sets) : "",
+            })
 
             return (
               <div
-                key={exercise.id}
+                key={group.id}
                 className={`overflow-hidden rounded-2xl border transition-colors ${
                   isDone ? "border-[#2CB52C] bg-[#F6FFF6]" : "border-[#E5E8EB] bg-[#FFFFFF]"
                 }`}
               >
                 <button
                   className="flex w-full items-center justify-between px-4 py-3"
-                  onClick={() => setExpandedId(isExpanded ? null : exercise.id)}
+                  onClick={() => setExpandedId(isExpanded ? null : group.id)}
                   type="button"
                 >
                   <div className="flex min-w-0 items-center gap-2.5">
@@ -219,55 +412,98 @@ export default function TodayScreen({ routines }: { routines: RoutineMap }) {
                     <MachineVisual machineId={exercise.machineId} size={36} />
                     <div className="min-w-0 text-left">
                       <p className="truncate text-[14px] font-semibold text-[#191F28]">{exercise.name}</p>
-                      <p className="text-[12px] text-[#8B95A1]">
-                        목표 {exercise.targetWeight}kg · {exercise.targetReps}회 · {exercise.targetSets}세트
-                      </p>
+                      <p className="text-[12px] text-[#8B95A1]">목표 {targetSummary}</p>
                     </div>
                   </div>
                   <div className="ml-2 shrink-0 text-right">
                     <p className={`text-[12px] font-semibold ${isDone ? "text-[#2CB52C]" : "text-[#3182F6]"}`}>
-                      {doneCount}/{exercise.targetSets}
+                      {profile.trackingMode === "setBased" ? `${doneCount}/${exercise.completions.length}` : isDone ? "완료" : "대기"}
                     </p>
                     <p className="mt-1 text-[11px] text-[#8B95A1]">{isExpanded ? "세부 닫기" : "세부 기록"}</p>
                   </div>
                 </button>
 
-                <div className="flex flex-wrap gap-2 px-4 pb-3">
-                  {exercise.sets.map((state, index) => (
+                {profile.trackingMode === "setBased" ? (
+                  <div className="flex flex-wrap gap-2 px-4 pb-3">
+                    {exercise.completions.map((state, index) => (
+                      <button
+                        key={index}
+                        className={`h-10 w-10 rounded-xl text-[13px] font-bold transition-all active:scale-95 ${
+                          state === "done"
+                            ? "bg-[#3182F6] text-white"
+                            : "border border-[#E5E8EB] bg-[#F8FAFC] text-[#8B95A1]"
+                        }`}
+                        onClick={() => toggleSet(exercise.id, index)}
+                        type="button"
+                      >
+                        {index + 1}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-4 pb-3">
                     <button
-                      key={index}
-                      className={`h-10 w-10 rounded-xl text-[13px] font-bold transition-all active:scale-95 ${
-                        state === "done"
-                          ? "bg-[#3182F6] text-white"
-                          : "border border-[#E5E8EB] bg-[#F8FAFC] text-[#8B95A1]"
+                      className={`h-11 w-full rounded-xl text-[13px] font-semibold transition-all active:scale-[0.99] ${
+                        isDone ? "bg-[#2CB52C] text-white" : "border border-[#E5E8EB] bg-[#F8FAFC] text-[#4E5968]"
                       }`}
-                      onClick={() => toggleSet(exercise.id, index)}
+                      onClick={() => toggleSet(exercise.id, 0)}
                       type="button"
                     >
-                      {index + 1}
+                      {isDone ? "완료 취소" : "기록 완료"}
                     </button>
-                  ))}
-                </div>
+                  </div>
+                )}
 
                 {isExpanded ? (
                   <div className="border-t border-[#E5E8EB] px-4 pb-4 pt-1">
-                    <p className="mb-2 text-[12px] font-medium text-[#8B95A1]">실제 횟수 기록</p>
-                    <div className="grid grid-cols-5 gap-2">
-                      {Array.from({ length: exercise.targetSets }, (_, index) => (
-                        <div key={index} className="flex flex-col items-center gap-1">
-                          <span className="text-[11px] text-[#8B95A1]">{index + 1}세트</span>
-                          <input
-                            className="w-full rounded-lg border border-[#E5E8EB] bg-[#F8FAFC] py-2 text-center text-[13px] font-semibold text-[#191F28] outline-none"
-                            onChange={(event) => setActualReps(exercise.id, index, sanitizePositiveIntegerInput(event.target.value))}
-                            placeholder={String(exercise.targetReps)}
-                            inputMode="numeric"
-                            pattern="[0-9]*"
-                            type="text"
-                            value={exercise.actualReps[index] ?? ""}
-                          />
+                    {profile.trackingMode === "setBased" ? (
+                      <>
+                        <p className="mb-2 text-[12px] font-medium text-[#8B95A1]">실제 횟수 기록</p>
+                        <div className="grid grid-cols-5 gap-2">
+                          {Array.from({ length: exercise.completions.length }, (_, index) => (
+                            <div key={index} className="flex flex-col items-center gap-1">
+                              <span className="text-[11px] text-[#8B95A1]">{index + 1}세트</span>
+                              <input
+                                className="w-full rounded-lg border border-[#E5E8EB] bg-[#F8FAFC] py-2 text-center text-[13px] font-semibold text-[#191F28] outline-none"
+                                onChange={(event) => setActualReps(exercise.id, index, sanitizePositiveIntegerInput(event.target.value))}
+                                placeholder={String(exercise.targetValues.reps)}
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                type="text"
+                                value={exercise.actualSetReps[index] ?? ""}
+                              />
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mb-2 text-[12px] font-medium text-[#8B95A1]">{getExerciseMetricHint(exercise.machineId)}</p>
+                        <div className="flex flex-col gap-2">
+                          {profile.fields.map((field) => (
+                            <label key={field.field} className="flex items-center justify-between gap-3 rounded-xl bg-[#F8FAFC] px-3 py-3">
+                              <span className="text-[13px] font-medium text-[#4E5968]">{field.label}</span>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  className="w-24 bg-transparent text-right text-[13px] font-semibold text-[#191F28] outline-none"
+                                  inputMode={metricInputMode}
+                                  onChange={(event) =>
+                                    setActualValue(exercise.id, field.field, sanitizeMetricValue(event.target.value))
+                                  }
+                                  placeholder={
+                                    exercise.targetValues[field.field] > 0 ? String(exercise.targetValues[field.field]) : field.placeholder
+                                  }
+                                  pattern={metricPattern}
+                                  type="text"
+                                  value={exercise.actualValues[field.field] ?? ""}
+                                />
+                                <span className="text-[11px] text-[#8B95A1]">{field.unit}</span>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                 ) : null}
               </div>

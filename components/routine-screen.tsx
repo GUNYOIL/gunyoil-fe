@@ -2,9 +2,12 @@
 
 import {
   DAY_META,
+  formatExerciseMetricSummary,
   formatBodyParts,
+  formatSupersetExerciseNames,
   getRoutineDayCardPreview,
   getTodayDayKey,
+  groupRoutineExercises,
   hasWorkoutBodyParts,
   isRestDay,
   type RoutineMap,
@@ -26,9 +29,7 @@ export default function RoutineScreen({
   const focusDay =
     DAY_META.find((day) => day.key === todayKey && hasWorkoutBodyParts(routines[day.key].bodyParts)) ?? configuredDays[0] ?? DAY_META[0]
   const focusRoutine = routines[focusDay.key]
-  const totalSets = configuredDays.reduce((sum, day) => {
-    return sum + routines[day.key].exercises.reduce((exerciseSum, exercise) => exerciseSum + (Number(exercise.sets) || 0), 0)
-  }, 0)
+  const totalExercises = configuredDays.reduce((sum, day) => sum + routines[day.key].exercises.length, 0)
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -56,7 +57,7 @@ export default function RoutineScreen({
             운동일 {configuredDays.length}일
           </span>
           <span className="shrink-0 rounded-full bg-[#FFFFFF] px-3 py-2 text-[12px] font-semibold text-[#191F28] shadow-[inset_0_0_0_1px_rgba(229,232,235,1)]">
-            총 세트 {totalSets}
+            총 운동 {totalExercises}개
           </span>
           <span className="shrink-0 rounded-full bg-[#FFFFFF] px-3 py-2 text-[12px] font-semibold text-[#191F28] shadow-[inset_0_0_0_1px_rgba(229,232,235,1)]">
             대표 루틴 {focusDay.full}
@@ -112,6 +113,7 @@ export default function RoutineScreen({
           const isToday = day.key === todayKey
           const isRest = isRestDay(routine.bodyParts)
           const isEmpty = routine.bodyParts.length === 0
+          const exerciseGroups = groupRoutineExercises(routine.exercises)
 
           return (
             <div
@@ -149,22 +151,42 @@ export default function RoutineScreen({
                 </div>
               ) : (
                 <div className="divide-y divide-[#E5E8EB] bg-[#FFFFFF]">
-                  {routine.exercises.map((exercise) => (
-                    <div key={exercise.id} className="flex items-center justify-between px-4 py-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <MachineVisual machineId={exercise.machineId} size={36} />
-                        <span className="truncate text-[13px] font-medium text-[#191F28]">{exercise.machineName}</span>
+                  {exerciseGroups.map((group) =>
+                    group.isSuperset ? (
+                      <div key={group.id} className="px-4 py-3">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="rounded-full bg-[#EBF3FE] px-2 py-0.5 text-[10px] font-semibold text-[#3182F6]">
+                            슈퍼세트
+                          </span>
+                          <span className="truncate text-[12px] font-semibold text-[#4E5968]">
+                            {formatSupersetExerciseNames(group.exercises)}
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          {group.exercises.map((exercise) => (
+                            <div key={exercise.id} className="flex items-center justify-between rounded-xl bg-[#F8FAFC] px-3 py-3">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <MachineVisual machineId={exercise.machineId} size={36} />
+                                <span className="truncate text-[13px] font-medium text-[#191F28]">{exercise.machineName}</span>
+                              </div>
+                              <span className="text-[12px] text-[#8B95A1]">{formatExerciseMetricSummary(exercise)}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <span className="text-[12px] text-[#8B95A1]">
-                        {exercise.weight}kg · {exercise.reps}회 · {exercise.sets}세트
-                      </span>
-                    </div>
-                  ))}
+                    ) : (
+                      <div key={group.id} className="flex items-center justify-between px-4 py-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <MachineVisual machineId={group.exercises[0].machineId} size={36} />
+                          <span className="truncate text-[13px] font-medium text-[#191F28]">{group.exercises[0].machineName}</span>
+                        </div>
+                        <span className="text-[12px] text-[#8B95A1]">{formatExerciseMetricSummary(group.exercises[0])}</span>
+                      </div>
+                    ),
+                  )}
                   <div className="flex items-center justify-between bg-[#F8FAFC] px-4 py-2.5">
-                    <span className="text-[12px] text-[#8B95A1]">총 세트</span>
-                    <span className="text-[12px] font-semibold text-[#4E5968]">
-                      {routine.exercises.reduce((sum, exercise) => sum + (Number(exercise.sets) || 0), 0)}세트
-                    </span>
+                    <span className="text-[12px] text-[#8B95A1]">운동 수</span>
+                    <span className="text-[12px] font-semibold text-[#4E5968]">{routine.exercises.length}개</span>
                   </div>
                 </div>
               )}
