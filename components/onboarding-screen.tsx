@@ -227,6 +227,26 @@ export default function OnboardingScreen({
   const canGoDetailStage =
     isRestDay(selectedDayRoutine.bodyParts) || (selectedDayRoutine.bodyParts.length > 0 && selectedDayRoutine.exercises.length > 0)
   const canCompleteRoutine = workingDays.length > 0 && incompleteDays.length === 0
+  const selectedDayExerciseCount = selectedDayRoutine.exercises.length
+  const selectedDayCompletedExercises = selectedDayRoutine.exercises.filter(isExerciseConfigured).length
+  const selectedDaySupersetPairCount = new Set(
+    selectedDayRoutine.exercises.flatMap((exercise) => (exercise.supersetGroupId ? [exercise.supersetGroupId] : [])),
+  ).size
+  const routineStageCards = [
+    { key: "focus" as const, label: "부위 설정", hint: "요일별 운동 타입을 먼저 정합니다", enabled: true },
+    {
+      key: "exercise" as const,
+      label: "운동 선택",
+      hint: canGoExerciseStage ? "머신을 고르고 슈퍼세트도 묶습니다" : "부위를 먼저 선택해야 합니다",
+      enabled: canGoExerciseStage,
+    },
+    {
+      key: "details" as const,
+      label: "운동 입력",
+      hint: canGoDetailStage ? "세트, 횟수, 무게를 입력합니다" : "운동 선택을 먼저 완료해야 합니다",
+      enabled: canGoDetailStage,
+    },
+  ]
   const genderHelper = gender === "" ? "성별을 선택해 주세요" : ""
   const heightHelper = height === "" ? "키를 입력해 주세요" : Number(height) <= 0 ? "0보다 큰 값을 입력해 주세요" : ""
   const weightHelper = weight === "" ? "몸무게를 입력해 주세요" : Number(weight) <= 0 ? "0보다 큰 값을 입력해 주세요" : ""
@@ -246,14 +266,19 @@ export default function OnboardingScreen({
         ? isRestDay(selectedDayRoutine.bodyParts)
           ? `${selectedDayMeta.full}은 휴식일입니다`
           : `${selectedDayRoutine.exercises.length}개 운동 선택됨`
-        : canCompleteRoutine
+          : canCompleteRoutine
           ? `${completedRoutineDays.length}일 루틴 완료`
           : workingDays.length === 0
             ? "최소 1일 이상의 운동일을 설정해 주세요"
             : `${incompleteDays.length}일의 운동 정보를 더 입력해 주세요`
-
-  const progressLabel = step === 1 ? "2/3" : "3/3"
+  const headerProgressLabel = step === 1 ? "1/2" : "2/2"
   const stageTitle = step === 1 ? "기본 정보" : "루틴 설정"
+  const routineStageHint =
+    routineStage === "focus"
+      ? "요일별 부위를 먼저 정하면 운동 선택이 열립니다"
+      : routineStage === "exercise"
+        ? "연속으로 붙은 운동은 슈퍼세트로 묶을 수 있습니다"
+        : "입력 상태를 보고 세트, 횟수, 무게를 마무리합니다"
 
   return (
     <div className="mx-auto flex min-h-svh max-w-[480px] flex-col bg-[#FFFFFF]">
@@ -269,7 +294,7 @@ export default function OnboardingScreen({
           <div className="flex items-center gap-2">
             <BrandMark iconClassName="h-6 w-6 rounded-lg" textClassName="text-[17px] font-bold text-[#191F28]" />
             <span className="rounded-full bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-medium text-[#8B95A1]">
-              {progressLabel}
+              {headerProgressLabel}
             </span>
           </div>
           <span className="rounded-full bg-[#EBF3FE] px-3 py-1.5 text-[11px] font-semibold text-[#3182F6]">
@@ -290,6 +315,9 @@ export default function OnboardingScreen({
               </h1>
               <p className="mt-3 text-[14px] leading-6 text-[#6B7684]">
                 입력한 몸무게와 목표를 기준으로 하루 단백질 목표를 계산합니다
+              </p>
+              <p className="mt-4 rounded-2xl bg-[#F7F8FA] px-3 py-2 text-[12px] leading-5 text-[#4E5968]">
+                프로필을 먼저 채워야 루틴 단계에서 입력값을 이어받을 수 있습니다
               </p>
 
               <div className="mt-6 flex flex-col gap-3">
@@ -396,7 +424,7 @@ export default function OnboardingScreen({
           </div>
         ) : (
           <div className="flex flex-col gap-5 px-4 pb-6 pt-6">
-            <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[12px] font-semibold text-[#8B95A1]">루틴 설정</p>
                 <h1 className="mt-1 text-[28px] font-bold leading-[1.12] tracking-[-0.03em] text-[#191F28]">주간 루틴 구성</h1>
@@ -407,6 +435,7 @@ export default function OnboardingScreen({
                       ? "해당 요일에 할 운동만 골라 주세요"
                       : "운동 값을 모두 입력해 주세요"}
                 </p>
+                <p className="mt-3 rounded-2xl bg-[#F7F8FA] px-3 py-2 text-[12px] leading-5 text-[#4E5968]">{routineStageHint}</p>
               </div>
               <div className="shrink-0 rounded-[18px] bg-[#F7F8FA] px-3 py-2 text-right">
                 <p className="text-[11px] font-semibold text-[#8B95A1]">완료</p>
@@ -417,11 +446,7 @@ export default function OnboardingScreen({
             </div>
 
             <div className="grid grid-cols-3 gap-1 rounded-[20px] bg-[#F2F4F6] p-1">
-              {[
-                { key: "focus" as const, label: "부위 설정", enabled: true },
-                { key: "exercise" as const, label: "운동 선택", enabled: canGoExerciseStage },
-                { key: "details" as const, label: "운동 입력", enabled: canGoDetailStage },
-              ].map((item) => (
+              {routineStageCards.map((item) => (
                 <button
                   key={item.key}
                   className={`rounded-[18px] px-3 py-3 text-center transition-colors ${
@@ -432,6 +457,7 @@ export default function OnboardingScreen({
                   type="button"
                 >
                   <p className="text-[13px] font-semibold">{item.label}</p>
+                  <p className="mt-1 text-[11px] leading-4 opacity-90">{item.hint}</p>
                 </button>
               ))}
             </div>
@@ -443,9 +469,22 @@ export default function OnboardingScreen({
                   <p className="mt-1 text-[13px] text-[#4E5968]">{selectedDayMeta.full}</p>
                 </div>
                 <span className="rounded-full bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-semibold text-[#6B7684]">
-                  {selectedDayBodyPartLabel}
+                  {selectedDayRoutine.bodyParts.length === 0
+                    ? "미설정"
+                    : isRestDay(selectedDayRoutine.bodyParts)
+                      ? "휴식"
+                      : selectedDayRoutine.exercises.length > 0 && selectedDayRoutine.exercises.every(isExerciseConfigured)
+                        ? "완료"
+                        : "입력 필요"}
                 </span>
               </div>
+              <p className="mt-2 text-[12px] leading-5 text-[#8B95A1]">
+                {selectedDayRoutine.bodyParts.length === 0
+                  ? "요일을 먼저 골라 루틴을 시작하세요"
+                  : isRestDay(selectedDayRoutine.bodyParts)
+                    ? "휴식일은 바로 다음 단계로 넘어갈 수 있습니다"
+                    : `${selectedDayRoutine.exercises.length}개 운동이 설정되어 있습니다`}
+              </p>
               <div className="mt-3 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
                 {DAY_META.map((day) => {
                   const routine = routines[day.key]
@@ -455,6 +494,13 @@ export default function OnboardingScreen({
                     routine.bodyParts.length > 0 &&
                     (isRestDay(routine.bodyParts) ||
                       (routine.exercises.length > 0 && routine.exercises.every(isExerciseConfigured)))
+                  const dayStatusLabel = isRestDay(routine.bodyParts)
+                    ? "휴식"
+                    : routine.bodyParts.length === 0
+                      ? "미설정"
+                      : routine.exercises.length > 0 && routine.exercises.every(isExerciseConfigured)
+                        ? "완료"
+                        : "입력 필요"
 
                   return (
                     <button
@@ -476,13 +522,13 @@ export default function OnboardingScreen({
                         >
                           {dayPreview.label}
                         </span>
-                        {dayPreview.extraLabel ? (
-                          <span className="rounded-full bg-white px-1.5 py-0.5 text-[9px] font-semibold text-[#6B7684] shadow-[inset_0_0_0_1px_rgba(229,232,235,1)]">
-                            {dayPreview.extraLabel}
-                          </span>
-                        ) : (
-                          <span className="h-[14px]" />
-                        )}
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
+                            isSelected ? "bg-white text-[#3182F6]" : "bg-white text-[#6B7684]"
+                          } shadow-[inset_0_0_0_1px_rgba(229,232,235,1)]`}
+                        >
+                          {dayStatusLabel}
+                        </span>
                       </div>
                       <span className={`h-1.5 w-1.5 rounded-full ${isDone ? "bg-[#2CB52C]" : "bg-[#D9DEE3]"}`} />
                     </button>
@@ -573,6 +619,20 @@ export default function OnboardingScreen({
 
             {routineStage === "exercise" ? (
               <>
+                <div className="rounded-[24px] border border-[#DCE7FB] bg-[#F7FBFF] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-semibold text-[#3182F6]">슈퍼세트 안내</p>
+                      <p className="mt-1 text-[13px] leading-6 text-[#4E5968]">
+                        세트 기반 운동 2개를 고르면 아래 카드에서 바로 묶을 수 있습니다. 연속 배치된 운동끼리 함께 진행하면 라운드 관리가 쉬워집니다.
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-[#FFFFFF] px-3 py-1.5 text-[11px] font-semibold text-[#3182F6]">
+                      {selectedDaySupersetPairCount > 0 ? `${selectedDaySupersetPairCount}쌍 연결됨` : "연결 없음"}
+                    </span>
+                  </div>
+                </div>
+
                 <div className="rounded-[24px] border border-[#E5E8EB] bg-[#FFFFFF] p-4">
                   <div className="flex items-center gap-2 rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-3 py-2.5">
                     <SearchIcon className="flex-shrink-0 text-[#8B95A1]" size={18} />
@@ -671,7 +731,14 @@ export default function OnboardingScreen({
 
                 <div className="rounded-[24px] border border-[#E5E8EB] bg-[#F8FAFC] p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-[12px] font-semibold text-[#8B95A1]">선택한 운동</p>
+                    <div>
+                      <p className="text-[12px] font-semibold text-[#8B95A1]">선택한 운동</p>
+                      <p className="mt-1 text-[12px] text-[#4E5968]">
+                        {selectedDayExerciseCount > 0
+                          ? `${selectedDayCompletedExercises}/${selectedDayExerciseCount}개가 다음 입력 단계로 이어집니다`
+                          : "운동을 추가하면 아래에서 슈퍼세트와 입력 상태를 바로 확인할 수 있습니다"}
+                      </p>
+                    </div>
                     <span className="text-[12px] font-semibold text-[#4E5968]">{selectedDayRoutine.exercises.length}개</span>
                   </div>
                   {selectedDayRoutine.exercises.length === 0 ? (
@@ -683,7 +750,12 @@ export default function OnboardingScreen({
                         const canTogglePair = canToggleSupersetPair(selectedDayRoutine.exercises, index)
 
                         return (
-                          <div key={exercise.id} className="rounded-xl border border-[#E5E8EB] bg-[#FFFFFF] px-3 py-3">
+                          <div
+                            key={exercise.id}
+                            className={`rounded-xl border px-3 py-3 ${
+                              exercise.supersetGroupId ? "border-[#DCE7FB] bg-[#F7FBFF]" : "border-[#E5E8EB] bg-[#FFFFFF]"
+                            }`}
+                          >
                             <div className="flex items-center justify-between gap-3">
                               <div className="flex min-w-0 items-center gap-3">
                                 <MachineVisual machineId={exercise.machineId} size={40} />
@@ -748,6 +820,14 @@ export default function OnboardingScreen({
                       <span className="rounded-full bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-semibold text-[#6B7684]">
                         {selectedDayRoutine.exercises.length}개
                       </span>
+                    </div>
+                    <div className="mt-3 rounded-2xl bg-[#F7FBFF] px-3 py-3">
+                      <p className="text-[11px] font-semibold text-[#3182F6]">슈퍼세트 확인</p>
+                      <p className="mt-1 text-[12px] leading-5 text-[#4E5968]">
+                        {selectedDaySupersetPairCount > 0
+                          ? `현재 ${selectedDaySupersetPairCount}쌍이 연결되어 있습니다. 연결 변경은 운동 선택 단계에서 할 수 있습니다.`
+                          : "슈퍼세트 설정은 운동 선택 단계에서 합니다. 필요하면 이전 단계에서 바로 위 운동과 묶어 주세요."}
+                      </p>
                     </div>
 
                     <div className="mt-4 flex flex-col gap-3">
@@ -896,7 +976,18 @@ export default function OnboardingScreen({
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[#EEF1F4] bg-[rgba(255,255,255,0.96)] px-4 py-3 pb-safe-bottom backdrop-blur">
         <div className="mx-auto max-w-[480px]">
-          <p className="mb-3 text-center text-[12px] text-[#8B95A1]">{step === 1 ? profileSummary : routineSummary}</p>
+          <div className="mb-3 rounded-2xl bg-[#F7F8FA] px-3 py-2 text-center">
+            <p className="text-[11px] font-semibold text-[#8B95A1]">
+              {step === 1
+                ? "프로필을 먼저 완성해요"
+                : routineStage === "focus"
+                  ? "부위를 정해 다음 단계를 여세요"
+                  : routineStage === "exercise"
+                    ? "운동을 선택하고 슈퍼세트를 묶어요"
+                    : "모든 값을 입력해 마무리해요"}
+            </p>
+            <p className="mt-1 text-[12px] text-[#4E5968]">{step === 1 ? profileSummary : routineSummary}</p>
+          </div>
           <div className="flex gap-2">
             {step === 1 ? null : (
               <button
