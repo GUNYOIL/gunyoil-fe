@@ -10,6 +10,14 @@ export const DAY_META = [
 
 export const BODY_PARTS = ["가슴", "등", "하체", "어깨", "팔", "유산소", "전신", "휴식"] as const
 export const REST_DAY_BODY_PART = "휴식" as const
+export const PERFORMANCE_TRAINING_PARTS = [
+  "스트렝스 트레이닝",
+  "순발력 트레이닝",
+  "안정화 트레이닝",
+  "근메스 트레이닝",
+  "협응력 트레이닝",
+] as const
+export const PERFORMANCE_ROUTINE_OPTIONS = [...PERFORMANCE_TRAINING_PARTS, REST_DAY_BODY_PART] as const
 
 export const GOAL_OPTIONS = [
   {
@@ -89,6 +97,8 @@ export const SET_PRESETS = [
 
 export type DayKey = (typeof DAY_META)[number]["key"]
 export type BodyPart = (typeof BODY_PARTS)[number]
+export type PerformanceTrainingPart = (typeof PERFORMANCE_TRAINING_PARTS)[number]
+export type RoutineFocus = BodyPart | PerformanceTrainingPart
 export type GoalKey = (typeof GOAL_OPTIONS)[number]["key"]
 export type MachineCategoryKey = (typeof MACHINE_CATEGORIES)[number]["key"]
 export type Gender = "male" | "female"
@@ -103,7 +113,7 @@ export type ExerciseDraft = {
 }
 
 export type DayRoutineDraft = {
-  bodyParts: BodyPart[]
+  bodyParts: RoutineFocus[]
   exercises: ExerciseDraft[]
 }
 
@@ -176,15 +186,29 @@ export function createEmptyRoutineMap(): RoutineMap {
   }
 }
 
-export function isRestDay(bodyParts: BodyPart[]) {
+export function getRoutineFocusOptions(goal: GoalKey): readonly RoutineFocus[] {
+  return goal === "performance" ? PERFORMANCE_ROUTINE_OPTIONS : BODY_PARTS
+}
+
+export function getRoutineFocusLabel(goal: GoalKey) {
+  return goal === "performance" ? "트레이닝 유형" : "운동 부위"
+}
+
+export function getRoutineFocusHint(goal: GoalKey) {
+  return goal === "performance"
+    ? "요일별로 훈련 유형을 고르고, 해당 훈련에 맞는 머신과 세트를 설정합니다"
+    : "복수 선택 가능, 휴식은 단독 선택됩니다"
+}
+
+export function isRestDay(bodyParts: RoutineFocus[]) {
   return bodyParts.includes(REST_DAY_BODY_PART)
 }
 
-export function hasWorkoutBodyParts(bodyParts: BodyPart[]) {
+export function hasWorkoutBodyParts(bodyParts: RoutineFocus[]) {
   return bodyParts.length > 0 && !isRestDay(bodyParts)
 }
 
-export function formatBodyParts(bodyParts: BodyPart[], emptyLabel = "미설정") {
+export function formatBodyParts(bodyParts: RoutineFocus[], emptyLabel = "미설정") {
   if (bodyParts.length === 0) {
     return emptyLabel
   }
@@ -196,7 +220,11 @@ export function formatBodyParts(bodyParts: BodyPart[], emptyLabel = "미설정")
   return bodyParts.join(" · ")
 }
 
-export function toggleBodyPartSelection(currentBodyParts: BodyPart[], nextBodyPart: BodyPart): BodyPart[] {
+export function toggleBodyPartSelection(
+  currentBodyParts: RoutineFocus[],
+  nextBodyPart: RoutineFocus,
+  allowedOptions: readonly RoutineFocus[] = BODY_PARTS,
+): RoutineFocus[] {
   if (nextBodyPart === REST_DAY_BODY_PART) {
     return isRestDay(currentBodyParts) ? [] : [REST_DAY_BODY_PART]
   }
@@ -208,47 +236,59 @@ export function toggleBodyPartSelection(currentBodyParts: BodyPart[], nextBodyPa
     nextSet.add(nextBodyPart)
   }
 
-  return BODY_PARTS.filter(
-    (bodyPart): bodyPart is Exclude<BodyPart, typeof REST_DAY_BODY_PART> =>
+  return allowedOptions.filter(
+    (bodyPart): bodyPart is Exclude<RoutineFocus, typeof REST_DAY_BODY_PART> =>
       bodyPart !== REST_DAY_BODY_PART && nextSet.has(bodyPart),
   )
 }
 
-export function getPreferredMachineCategories(bodyParts: BodyPart[]): MachineCategoryKey[] {
-  const bodyPartToCategory: Partial<Record<BodyPart, MachineCategoryKey>> = {
-    "가슴": "chest",
-    "등": "back",
-    "하체": "legs",
-    "어깨": "shoulder",
-    "팔": "arms",
-    "유산소": "cardio",
+export function getPreferredMachineCategories(bodyParts: RoutineFocus[]): MachineCategoryKey[] {
+  const bodyPartToCategory: Partial<Record<RoutineFocus, MachineCategoryKey[]>> = {
+    "가슴": ["chest"],
+    "등": ["back"],
+    "하체": ["legs"],
+    "어깨": ["shoulder"],
+    "팔": ["arms"],
+    "유산소": ["cardio"],
+    "전신": ["legs", "back", "chest", "shoulder", "arms", "cardio"],
+    "스트렝스 트레이닝": ["legs", "back", "chest", "shoulder", "arms"],
+    "순발력 트레이닝": ["legs", "cardio", "shoulder"],
+    "안정화 트레이닝": ["shoulder", "arms", "cardio"],
+    "근메스 트레이닝": ["chest", "back", "legs", "shoulder", "arms"],
+    "협응력 트레이닝": ["cardio", "legs", "shoulder"],
   }
 
   return bodyParts.reduce<MachineCategoryKey[]>((accumulator, bodyPart) => {
-    const category = bodyPartToCategory[bodyPart]
-    if (category && !accumulator.includes(category)) {
-      accumulator.push(category)
-    }
+    const categories = bodyPartToCategory[bodyPart] ?? []
+    categories.forEach((category) => {
+      if (!accumulator.includes(category)) {
+        accumulator.push(category)
+      }
+    })
     return accumulator
   }, [])
 }
 
-function normalizeBodyParts(value: unknown): BodyPart[] {
+function normalizeBodyParts(value: unknown): RoutineFocus[] {
+  const allRoutineFocuses = [...BODY_PARTS, ...PERFORMANCE_TRAINING_PARTS] as const
+
   if (typeof value === "string") {
-    return BODY_PARTS.includes(value as BodyPart) ? toggleBodyPartSelection([], value as BodyPart) : []
+    return allRoutineFocuses.includes(value as RoutineFocus) ? toggleBodyPartSelection([], value as RoutineFocus, allRoutineFocuses) : []
   }
 
   if (!Array.isArray(value)) {
     return []
   }
 
-  const filtered = value.filter((item): item is BodyPart => typeof item === "string" && BODY_PARTS.includes(item as BodyPart))
+  const filtered = value.filter(
+    (item): item is RoutineFocus => typeof item === "string" && allRoutineFocuses.includes(item as RoutineFocus),
+  )
   if (filtered.includes(REST_DAY_BODY_PART)) {
     return [REST_DAY_BODY_PART]
   }
 
-  return BODY_PARTS.filter(
-    (bodyPart): bodyPart is Exclude<BodyPart, typeof REST_DAY_BODY_PART> =>
+  return allRoutineFocuses.filter(
+    (bodyPart): bodyPart is Exclude<RoutineFocus, typeof REST_DAY_BODY_PART> =>
       bodyPart !== REST_DAY_BODY_PART && filtered.includes(bodyPart),
   )
 }

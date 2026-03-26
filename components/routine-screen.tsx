@@ -24,7 +24,7 @@ export default function RoutineScreen({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-[20px] font-bold tracking-tight text-[#191F28]">주간 루틴</h2>
-            <p className="mt-0.5 text-[13px] text-[#8B95A1]">요일별 부위와 머신 설정</p>
+            <p className="mt-0.5 text-[13px] text-[#8B95A1]">요일별 루틴 유형과 머신 설정</p>
           </div>
           <button
             className="rounded-full bg-[#EBF3FE] px-3.5 py-2 text-[12px] font-semibold text-[#3182F6]"

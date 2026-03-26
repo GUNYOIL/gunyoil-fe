@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react"
 import {
-  BODY_PARTS,
   DAY_META,
   GOAL_OPTIONS,
   MACHINE_CATEGORIES,
@@ -15,16 +14,19 @@ import {
   getDayMeta,
   getGoalOption,
   getPreferredMachineCategories,
+  getRoutineFocusHint,
+  getRoutineFocusLabel,
+  getRoutineFocusOptions,
   hasWorkoutBodyParts,
   isRestDay,
   toggleBodyPartSelection,
-  type DayKey,
-  type BodyPart,
   type ExerciseDraft,
+  type DayKey,
   type Gender,
   type GoalKey,
   type MachineCategoryKey,
   type OnboardingData,
+  type RoutineFocus,
   type RoutineMap,
 } from "@/lib/app-config"
 import BrandMark from "./brand-mark"
@@ -59,6 +61,9 @@ export default function OnboardingScreen({
   const numericWeight = Number(weight)
   const proteinTarget = calculateProteinTarget(numericWeight, goal)
   const goalOption = getGoalOption(goal)
+  const routineFocusOptions = getRoutineFocusOptions(goal)
+  const routineFocusLabel = getRoutineFocusLabel(goal)
+  const routineFocusHint = getRoutineFocusHint(goal)
   const selectedDayRoutine = routines[selectedDay]
   const selectedDayMeta = getDayMeta(selectedDay)
   const selectedDayBodyPartLabel = formatBodyParts(selectedDayRoutine.bodyParts)
@@ -89,11 +94,11 @@ export default function OnboardingScreen({
     })
   }, [machineCategory, machineSearch, selectedDayRoutine.bodyParts])
 
-  const toggleBodyPart = (dayKey: DayKey, nextBodyPart: BodyPart) => {
+  const toggleBodyPart = (dayKey: DayKey, nextBodyPart: RoutineFocus) => {
     setRoutines((previous) => ({
       ...previous,
       [dayKey]: (() => {
-        const nextBodyParts = toggleBodyPartSelection(previous[dayKey].bodyParts, nextBodyPart)
+        const nextBodyParts = toggleBodyPartSelection(previous[dayKey].bodyParts, nextBodyPart, routineFocusOptions)
         if (isRestDay(nextBodyParts)) {
           return { bodyParts: nextBodyParts, exercises: [] }
         }
@@ -195,7 +200,7 @@ export default function OnboardingScreen({
     routineStage === "focus"
       ? canGoExerciseStage
         ? `${selectedDayMeta.full} · ${selectedDayBodyPartLabel}`
-        : "선택한 요일의 운동 부위를 먼저 정해 주세요"
+        : `선택한 요일의 ${routineFocusLabel}을 먼저 정해 주세요`
       : routineStage === "exercise"
         ? isRestDay(selectedDayRoutine.bodyParts)
           ? `${selectedDayMeta.full}은 휴식일입니다`
@@ -438,20 +443,20 @@ export default function OnboardingScreen({
               <>
                 <div className="rounded-[24px] border border-[#E5E8EB] bg-[#FFFFFF] p-4">
                   <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[12px] font-semibold text-[#8B95A1]">운동 부위</p>
-                    <p className="mt-1 text-[13px] text-[#4E5968]">복수 선택 가능, 휴식은 단독 선택됩니다</p>
+                    <div>
+                      <p className="text-[12px] font-semibold text-[#8B95A1]">{routineFocusLabel}</p>
+                      <p className="mt-1 text-[13px] text-[#4E5968]">{routineFocusHint}</p>
+                    </div>
+                    <span className="rounded-full bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-semibold text-[#6B7684]">
+                      {selectedDayBodyPartLabel}
+                    </span>
                   </div>
-                  <span className="rounded-full bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-semibold text-[#6B7684]">
-                    {selectedDayBodyPartLabel}
-                  </span>
-                </div>
 
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  {BODY_PARTS.map((part) => (
-                    <button
-                      key={part}
-                      className={`rounded-2xl border py-3 text-[13px] font-medium transition-colors ${
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    {routineFocusOptions.map((part) => (
+                      <button
+                        key={part}
+                        className={`rounded-2xl border py-3 text-[13px] font-medium transition-colors ${
                           selectedDayRoutine.bodyParts.includes(part)
                             ? "border-[#3182F6] bg-[#EBF3FE] text-[#3182F6]"
                             : "border-[#E5E8EB] bg-[#FFFFFF] text-[#191F28]"
@@ -592,8 +597,8 @@ export default function OnboardingScreen({
                   </div>
                 ) : (
                   <div className="rounded-[24px] border border-[#E5E8EB] bg-[#FFFFFF] px-4 py-6 text-center">
-                    <p className="text-[14px] font-semibold text-[#191F28]">먼저 운동 부위를 선택해 주세요</p>
-                    <p className="mt-2 text-[12px] text-[#8B95A1]">부위를 고르면 추천 머신이 정렬되어 나옵니다</p>
+                    <p className="text-[14px] font-semibold text-[#191F28]">먼저 {routineFocusLabel}을 선택해 주세요</p>
+                    <p className="mt-2 text-[12px] text-[#8B95A1]">선택한 기준에 맞춰 추천 머신이 먼저 정렬됩니다</p>
                   </div>
                 )}
 

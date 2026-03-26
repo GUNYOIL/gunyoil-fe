@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react"
 import {
-  BODY_PARTS,
   DAY_META,
   MACHINE_CATEGORIES,
   MACHINES,
@@ -13,14 +12,17 @@ import {
   getDayMeta,
   getGoalOption,
   getPreferredMachineCategories,
+  getRoutineFocusHint,
+  getRoutineFocusLabel,
+  getRoutineFocusOptions,
   getTodayDayKey,
   hasWorkoutBodyParts,
   isRestDay,
   toggleBodyPartSelection,
-  type BodyPart,
   type DayKey,
   type ExerciseDraft,
   type MachineCategoryKey,
+  type RoutineFocus,
   type RoutineMap,
   type UserProfile,
 } from "@/lib/app-config"
@@ -78,6 +80,9 @@ export default function RoutineEditorScreen({
   }, [routines])
 
   const goalOption = getGoalOption(profile.goal)
+  const routineFocusOptions = getRoutineFocusOptions(profile.goal)
+  const routineFocusLabel = getRoutineFocusLabel(profile.goal)
+  const routineFocusHint = getRoutineFocusHint(profile.goal)
   const selectedDayRoutine = draftRoutines[selectedDay]
   const selectedDayMeta = getDayMeta(selectedDay)
   const selectedDayBodyPartLabel = formatBodyParts(selectedDayRoutine.bodyParts)
@@ -133,11 +138,11 @@ export default function RoutineEditorScreen({
     return () => window.removeEventListener("beforeunload", handleBeforeUnload)
   }, [isDirty])
 
-  const toggleBodyPart = (dayKey: DayKey, nextBodyPart: BodyPart) => {
+  const toggleBodyPart = (dayKey: DayKey, nextBodyPart: RoutineFocus) => {
     setDraftRoutines((previous) => ({
       ...previous,
       [dayKey]: (() => {
-        const nextBodyParts = toggleBodyPartSelection(previous[dayKey].bodyParts, nextBodyPart)
+        const nextBodyParts = toggleBodyPartSelection(previous[dayKey].bodyParts, nextBodyPart, routineFocusOptions)
         if (isRestDay(nextBodyParts)) {
           return { bodyParts: nextBodyParts, exercises: [] }
         }
@@ -239,7 +244,7 @@ export default function RoutineEditorScreen({
     routineStage === "focus"
       ? canGoExerciseStage
         ? `${selectedDayMeta.full} · ${selectedDayBodyPartLabel}`
-        : "선택한 요일의 운동 부위를 먼저 정해 주세요"
+        : `선택한 요일의 ${routineFocusLabel}을 먼저 정해 주세요`
       : routineStage === "exercise"
         ? isRestDay(selectedDayRoutine.bodyParts)
           ? `${selectedDayMeta.full}은 휴식일입니다`
@@ -382,8 +387,8 @@ export default function RoutineEditorScreen({
               <div className="rounded-[24px] border border-[#E5E8EB] bg-[#FFFFFF] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-[12px] font-semibold text-[#8B95A1]">운동 부위</p>
-                    <p className="mt-1 text-[13px] text-[#4E5968]">복수 선택 가능, 휴식은 단독 선택됩니다</p>
+                    <p className="text-[12px] font-semibold text-[#8B95A1]">{routineFocusLabel}</p>
+                    <p className="mt-1 text-[13px] text-[#4E5968]">{routineFocusHint}</p>
                   </div>
                   <span className="rounded-full bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-semibold text-[#6B7684]">
                     {selectedDayBodyPartLabel}
@@ -391,7 +396,7 @@ export default function RoutineEditorScreen({
                 </div>
 
                 <div className="mt-4 grid grid-cols-3 gap-2">
-                  {BODY_PARTS.map((part) => (
+                  {routineFocusOptions.map((part) => (
                     <button
                       key={part}
                       className={`rounded-2xl border py-3 text-[13px] font-medium transition-colors ${
@@ -542,8 +547,8 @@ export default function RoutineEditorScreen({
                 </div>
               ) : (
                 <div className="rounded-[24px] border border-[#E5E8EB] bg-[#FFFFFF] px-4 py-6 text-center">
-                  <p className="text-[14px] font-semibold text-[#191F28]">먼저 운동 부위를 선택해 주세요</p>
-                  <p className="mt-2 text-[12px] text-[#8B95A1]">부위를 고르면 추천 머신이 정렬되어 나옵니다</p>
+                  <p className="text-[14px] font-semibold text-[#191F28]">먼저 {routineFocusLabel}을 선택해 주세요</p>
+                  <p className="mt-2 text-[12px] text-[#8B95A1]">선택한 기준에 맞춰 추천 머신이 먼저 정렬됩니다</p>
                 </div>
               )}
 
