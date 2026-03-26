@@ -113,6 +113,57 @@ export default function RoutineEditorScreen({
   const canGoDetailStage =
     isRestDay(selectedDayRoutine.bodyParts) || (selectedDayRoutine.bodyParts.length > 0 && selectedDayRoutine.exercises.length > 0)
   const canSave = workingDays.length > 0 && incompleteDays.length === 0
+  const selectedDayExerciseCount = selectedDayRoutine.exercises.length
+  const selectedDayCompletedExercises = selectedDayRoutine.exercises.filter(isExerciseConfigured).length
+  const selectedDaySupersetPairCount = new Set(
+    selectedDayRoutine.exercises.flatMap((exercise) => (exercise.supersetGroupId ? [exercise.supersetGroupId] : [])),
+  ).size
+  const routineStageCards = [
+    { key: "focus" as const, label: "부위 설정", hint: "요일의 운동 타입을 먼저 정합니다", enabled: true },
+    {
+      key: "exercise" as const,
+      label: "운동 선택",
+      hint: canGoExerciseStage ? "머신을 고르고 슈퍼세트도 묶습니다" : "부위를 먼저 선택해야 합니다",
+      enabled: canGoExerciseStage,
+    },
+    {
+      key: "details" as const,
+      label: "운동 입력",
+      hint: canGoDetailStage ? "세트, 횟수, 무게를 입력합니다" : "운동 선택을 먼저 완료해야 합니다",
+      enabled: canGoDetailStage,
+    },
+  ]
+  const routineStageHint =
+    routineStage === "focus"
+      ? "먼저 요일의 부위를 정하면 아래 단계가 활성화됩니다"
+      : routineStage === "exercise"
+        ? "운동을 2개 이상 이어 붙이면 슈퍼세트를 만들 수 있습니다"
+        : "선택한 운동의 값을 모두 입력하면 저장할 수 있습니다"
+  const selectedDayStatusLabel = isRestDay(selectedDayRoutine.bodyParts)
+    ? "휴식일"
+    : selectedDayRoutine.bodyParts.length === 0
+      ? "미설정"
+      : selectedDayExerciseCount > 0
+        ? selectedDayExerciseCount === selectedDayCompletedExercises
+          ? "완료"
+          : "입력 필요"
+        : "운동 없음"
+  const selectedDayStatusTone =
+    selectedDayStatusLabel === "완료"
+      ? "bg-[#EBF3FE] text-[#3182F6]"
+      : selectedDayStatusLabel === "입력 필요"
+        ? "bg-[#FFF7ED] text-[#C2410C]"
+        : selectedDayStatusLabel === "휴식일"
+          ? "bg-[#F2F4F6] text-[#4E5968]"
+          : "bg-[#F8FAFC] text-[#8B95A1]"
+  const selectedDayProgressText =
+    selectedDayRoutine.bodyParts.length === 0
+      ? "먼저 부위를 선택해 루틴을 시작하세요"
+      : isRestDay(selectedDayRoutine.bodyParts)
+        ? "휴식일은 바로 저장할 수 있습니다"
+        : selectedDayExerciseCount === 0
+          ? "운동을 추가해야 다음 단계로 넘어갈 수 있습니다"
+          : `${selectedDayCompletedExercises}/${selectedDayExerciseCount}개 운동이 저장 가능한 상태입니다`
 
   const prioritizedMachines = useMemo(() => {
     return MACHINES.filter((machine) => {
@@ -291,7 +342,7 @@ export default function RoutineEditorScreen({
           <div className="flex items-center gap-2">
             <span className="text-[17px] font-bold text-[#191F28]">루틴 수정</span>
             <span className="rounded-full bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-medium text-[#8B95A1]">
-              {routineStage === "focus" ? "1/3" : routineStage === "exercise" ? "2/3" : "3/3"}
+              {routineStage === "focus" ? "부위" : routineStage === "exercise" ? "운동" : "입력"}
             </span>
           </div>
           <span className="rounded-full bg-[#EBF3FE] px-3 py-1.5 text-[11px] font-semibold text-[#3182F6]">
@@ -322,6 +373,7 @@ export default function RoutineEditorScreen({
             <p className="mt-2 text-[14px] leading-[1.6] text-[#8B95A1]">
               부위를 바꾸고, 운동을 고르고, 운동 값을 입력한 뒤 저장합니다
             </p>
+            <p className="mt-3 rounded-2xl bg-[#F8FAFC] px-3 py-2 text-[12px] leading-5 text-[#4E5968]">{routineStageHint}</p>
 
             <div className="mt-5 grid grid-cols-3 gap-2">
               <div className="rounded-2xl bg-[#F8FAFC] px-3 py-3">
@@ -340,11 +392,7 @@ export default function RoutineEditorScreen({
           </div>
 
           <div className="grid grid-cols-3 gap-2">
-            {[
-              { key: "focus" as const, label: "부위 설정", enabled: true },
-              { key: "exercise" as const, label: "운동 선택", enabled: canGoExerciseStage },
-              { key: "details" as const, label: "운동 입력", enabled: canGoDetailStage },
-            ].map((item) => (
+            {routineStageCards.map((item) => (
               <button
                 key={item.key}
                 className={`rounded-2xl border px-3 py-3 text-left transition-colors ${
@@ -354,8 +402,9 @@ export default function RoutineEditorScreen({
                 onClick={() => setRoutineStage(item.key)}
                 type="button"
               >
-                <p className={`text-[13px] font-semibold ${routineStage === item.key ? "text-[#3182F6]" : "text-[#191F28]"}`}>
-                  {item.label}
+                <p className={`text-[13px] font-semibold ${routineStage === item.key ? "text-[#3182F6]" : "text-[#191F28]"}`}>{item.label}</p>
+                <p className={`mt-1 text-[11px] leading-4 ${routineStage === item.key ? "text-[#3182F6]" : "text-[#8B95A1]"}`}>
+                  {item.hint}
                 </p>
               </button>
             ))}
@@ -367,10 +416,9 @@ export default function RoutineEditorScreen({
                 <p className="text-[12px] font-semibold text-[#8B95A1]">요일 선택</p>
                 <p className="mt-1 text-[13px] text-[#4E5968]">{selectedDayMeta.full}</p>
               </div>
-              <span className="rounded-full bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-semibold text-[#6B7684]">
-                {selectedDayBodyPartLabel}
-              </span>
+              <span className={`rounded-full px-3 py-1.5 text-[11px] font-semibold ${selectedDayStatusTone}`}>{selectedDayStatusLabel}</span>
             </div>
+            <p className="mt-2 text-[12px] leading-5 text-[#8B95A1]">{selectedDayProgressText}</p>
             <div className="mt-3 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
               {DAY_META.map((day) => {
                 const routine = draftRoutines[day.key]
@@ -380,6 +428,13 @@ export default function RoutineEditorScreen({
                   routine.bodyParts.length > 0 &&
                   (isRestDay(routine.bodyParts) ||
                     (routine.exercises.length > 0 && routine.exercises.every(isExerciseConfigured)))
+                const dayStatusLabel = isRestDay(routine.bodyParts)
+                  ? "휴식"
+                  : routine.bodyParts.length === 0
+                    ? "미설정"
+                    : routine.exercises.length > 0 && routine.exercises.every(isExerciseConfigured)
+                      ? "완료"
+                      : "입력 필요"
 
                 return (
                   <button
@@ -403,13 +458,13 @@ export default function RoutineEditorScreen({
                       >
                         {dayPreview.label}
                       </span>
-                      {dayPreview.extraLabel ? (
-                        <span className="rounded-full bg-white px-1.5 py-0.5 text-[9px] font-semibold text-[#6B7684] shadow-[inset_0_0_0_1px_rgba(229,232,235,1)]">
-                          {dayPreview.extraLabel}
-                        </span>
-                      ) : (
-                        <span className="h-[14px]" />
-                      )}
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
+                          isSelected ? "bg-white text-[#3182F6]" : "bg-white text-[#6B7684]"
+                        } shadow-[inset_0_0_0_1px_rgba(229,232,235,1)]`}
+                      >
+                        {dayStatusLabel}
+                      </span>
                     </div>
                     <span className={`h-1.5 w-1.5 rounded-full ${isDone ? "bg-[#2CB52C]" : "bg-[#D9DEE3]"}`} />
                   </button>
@@ -500,6 +555,20 @@ export default function RoutineEditorScreen({
 
           {routineStage === "exercise" ? (
             <>
+              <div className="rounded-[24px] border border-[#DCE7FB] bg-[#F7FBFF] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-semibold text-[#3182F6]">슈퍼세트 안내</p>
+                    <p className="mt-1 text-[13px] leading-6 text-[#4E5968]">
+                      세트 기반 운동 2개를 고르면 아래 카드에서 바로 묶을 수 있습니다. 연속 배치된 운동끼리 함께 진행하면 라운드 관리가 쉬워집니다.
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-[#FFFFFF] px-3 py-1.5 text-[11px] font-semibold text-[#3182F6]">
+                    {selectedDaySupersetPairCount > 0 ? `${selectedDaySupersetPairCount}쌍 연결됨` : "연결 없음"}
+                  </span>
+                </div>
+              </div>
+
               <div className="rounded-[24px] border border-[#E5E8EB] bg-[#FFFFFF] p-4">
                 <div className="flex items-center gap-2 rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-3 py-2.5">
                   <SearchIcon className="flex-shrink-0 text-[#8B95A1]" size={18} />
@@ -598,7 +667,14 @@ export default function RoutineEditorScreen({
 
               <div className="rounded-[24px] border border-[#E5E8EB] bg-[#F8FAFC] p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-[12px] font-semibold text-[#8B95A1]">선택한 운동</p>
+                  <div>
+                    <p className="text-[12px] font-semibold text-[#8B95A1]">선택한 운동</p>
+                    <p className="mt-1 text-[12px] text-[#4E5968]">
+                      {selectedDayExerciseCount > 0
+                        ? `${selectedDayCompletedExercises}/${selectedDayExerciseCount}개가 다음 입력 단계로 이어집니다`
+                        : "운동을 추가하면 아래에서 슈퍼세트와 입력 상태를 바로 확인할 수 있습니다"}
+                    </p>
+                  </div>
                   <span className="text-[12px] font-semibold text-[#4E5968]">{selectedDayRoutine.exercises.length}개</span>
                 </div>
                 {selectedDayRoutine.exercises.length === 0 ? (
@@ -610,7 +686,12 @@ export default function RoutineEditorScreen({
                       const canTogglePair = canToggleSupersetPair(selectedDayRoutine.exercises, index)
 
                       return (
-                        <div key={exercise.id} className="rounded-xl border border-[#E5E8EB] bg-[#FFFFFF] px-3 py-3">
+                        <div
+                          key={exercise.id}
+                          className={`rounded-xl border px-3 py-3 ${
+                            exercise.supersetGroupId ? "border-[#DCE7FB] bg-[#F7FBFF]" : "border-[#E5E8EB] bg-[#FFFFFF]"
+                          }`}
+                        >
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex min-w-0 items-center gap-3">
                               <MachineVisual machineId={exercise.machineId} size={40} />
@@ -675,6 +756,14 @@ export default function RoutineEditorScreen({
                     <span className="rounded-full bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-semibold text-[#6B7684]">
                       {selectedDayRoutine.exercises.length}개
                     </span>
+                  </div>
+                  <div className="mt-3 rounded-2xl bg-[#F7FBFF] px-3 py-3">
+                    <p className="text-[11px] font-semibold text-[#3182F6]">슈퍼세트 확인</p>
+                    <p className="mt-1 text-[12px] leading-5 text-[#4E5968]">
+                      {selectedDaySupersetPairCount > 0
+                        ? `현재 ${selectedDaySupersetPairCount}쌍이 연결되어 있습니다. 연결 변경은 운동 선택 단계에서 할 수 있습니다.`
+                        : "슈퍼세트 설정은 운동 선택 단계에서 합니다. 필요하면 이전 단계에서 바로 위 운동과 묶어 주세요."}
+                    </p>
                   </div>
 
                   <div className="mt-4 flex flex-col gap-3">
@@ -825,7 +914,12 @@ export default function RoutineEditorScreen({
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[#E5E8EB] bg-[#FFFFFF] px-4 py-3 pb-safe-bottom">
         <div className="mx-auto max-w-[480px]">
-          <p className="mb-3 text-center text-[12px] text-[#8B95A1]">{routineSummary}</p>
+          <div className="mb-3 rounded-2xl bg-[#F8FAFC] px-3 py-2 text-center">
+            <p className="text-[11px] font-semibold text-[#8B95A1]">
+              {routineStage === "focus" ? "먼저 부위를 정해요" : routineStage === "exercise" ? "운동을 고르고 슈퍼세트를 묶어요" : "값을 모두 입력해 저장해요"}
+            </p>
+            <p className="mt-1 text-[12px] text-[#4E5968]">{routineSummary}</p>
+          </div>
           <div className="flex gap-2">
             <button
               className="flex-1 rounded-2xl border border-[#E5E8EB] bg-[#FFFFFF] py-3 text-[14px] font-semibold text-[#4E5968]"
