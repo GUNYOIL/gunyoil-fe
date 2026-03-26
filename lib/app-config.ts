@@ -147,7 +147,7 @@ export const MACHINES = [
   { id: "cable-crunch", name: "케이블 크런치", category: "core", muscle: "복근" },
   { id: "hanging-leg-raise", name: "행잉 레그 레이즈", category: "core", muscle: "복근/고관절" },
   { id: "weighted-sit-up", name: "웨이티드 싯업", category: "core", muscle: "복근" },
-  { id: "ab-wheel", name: "ab 휠 아웃", category: "core", muscle: "복근/코어" },
+  { id: "ab-wheel", name: "ab 롤 아웃", category: "core", muscle: "복근/코어" },
   { id: "treadmill", name: "런닝머신", category: "cardio", muscle: "전신" },
   { id: "cycle", name: "사이클", category: "cardio", muscle: "하체/심폐" },
   { id: "elliptical", name: "일립티컬", category: "cardio", muscle: "전신" },
